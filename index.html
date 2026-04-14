@@ -219,7 +219,8 @@ header p{font-size:.58rem;color:var(--text-secondary);font-family:'Geist Mono',m
 
 /* ── Box type selector ── */
 .box-type-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:.5rem}
-.box-type-card{display:flex;flex-direction:column;align-items:center;gap:.35rem;padding:.5rem;border:1.5px solid var(--border);border-radius:var(--radius);cursor:pointer;user-select:none;transition:border-color .2s,box-shadow .2s;background:var(--bg-card)}
+.box-type-card{display:flex;flex-direction:column;align-items:center;gap:.35rem;padding:.5rem;border:1.5px solid var(--border);border-radius:var(--radius);cursor:pointer;user-select:none;transition:border-color .2s,box-shadow .2s;background:var(--bg-card);position:relative}
+.box-type-badge{position:absolute;top:4px;left:4px;min-width:16px;height:16px;padding:0 4px;background:#e53e3e;color:#fff;font-size:.6rem;font-weight:700;font-family:'Geist Mono',monospace;border-radius:4px;display:flex;align-items:center;justify-content:center;line-height:1;z-index:1;pointer-events:none}
 .box-type-card:hover{border-color:var(--accent-blue);background:var(--bg-card-hover)}
 .box-type-card.active{border-color:var(--accent-blue);box-shadow:0 0 8px var(--glow)}
 .box-type-card img{width:100%;aspect-ratio:1;object-fit:contain;border-radius:3px;background:#fff}
@@ -374,7 +375,14 @@ function getTC(){
 var S={
   largo:100,ancho:80,alto:100,
   pegaW:10,cierreH:10,redondeo:2,talon:5,lock:2,cunaH:5,solapaH:0,
-  boxType:'cierre-automatico',
+  candado:false,
+  cdW:20,cdH:8,  // candado: ancho y alto de la lengüeta (mm) — nombres/valores provisionales
+  lockW:25,      // candado: largo total de la ranura (v37→v38), centrada en panel
+  lockH:25,      // candado: altura total del candado (cada línea = lockH/2)
+  lockAngle:15,  // candado: ángulo de inclinación hacia adentro de las líneas v37→v52 y v38→v54 (grados)
+  lockR:5,       // candado: radio de redondeo de los vértices v52 y v54 (mm)
+  lockA:4,       // candado: largo de anclaje — líneas v37→v47 y v49→v38 (mm)
+  boxType:'doble-solapa',
   cutColor:'#ff4757',cutDash:false,cutStroke:1,
   foldColor:'#4da6ff',foldDash:true,foldStroke:1,
   noColor:false,showCotas:true,
@@ -385,6 +393,7 @@ var S={
 };
 S.solapaH=Math.min(Math.round(S.ancho*5/6),Math.floor(S.largo/2)); // init to auto-max
 var _prevL=S.largo,_prevA=S.ancho; // track dimension changes for solapaH reset
+var _prevCandado=S.candado; // track candado toggle for sidebar rebuild
 var PT2MM=0.3528; // 1pt = 0.3528mm
 
 /* ═══════════════════ GEOMETRY ═══════════════════ */
@@ -507,8 +516,940 @@ function contourPath(g,bt){
     ' L '+tlX2+' '+yPT+' L '+xF+' '+yTT+' Z';
 }
 
+/* ═══════════════════ CANDADO — PLANO ALTERNATIVO ═══════════════════ */
+// Vértices del plano base para el overlay (círculos rojos).
+function vertsForBase(g,bt){
+  if(bt==='doble-solapa-alt'){
+    return[
+      [g.xT,g.yCT+g.R],[g.xT+g.R,g.yCT],
+      [g.xI-g.R,g.yCT],[g.xI,g.yCT+g.R],
+      [g.xI,g.yTT],
+      [g.xI-g.TAL-g.LK,g.yTT],[g.xI-g.TAL-g.LK,g.yTT+2],
+      [g.xI,g.yPT],
+      [g.xI+g.TI,g.yPT-g.TH],[g.xF-g.TI,g.yPT-g.TH],
+      [g.xF,g.yPT-g.TAL],[g.xF,g.yPT],
+      [g.xD,g.yPT],
+      [g.xD,g.yPT-g.TAL],
+      [g.xD+g.TI,g.yPT-g.TH],[g.xD+g.A-g.TI,g.yPT-g.TH],
+      [g.xDR,g.yPT],
+      [g.xDR,g.yPB],
+      [g.xDR,g.yPB+g.TAL],
+      [g.xD+g.A-g.TI,g.yPB+g.TH],[g.xD+g.TI,g.yPB+g.TH],
+      [g.xD,g.yPB],
+      [g.xD,g.yBB],
+      [g.xD-g.TAL-g.LK,g.yBB],[g.xD-g.TAL-g.LK,g.yBB-2],
+      [g.xD,g.yCB-g.R],[g.xD-g.R,g.yCB],
+      [g.xF+g.R,g.yCB],[g.xF,g.yCB-g.R],
+      [g.xF,g.yBB],
+      [g.xF+g.TAL+g.LK,g.yBB],[g.xF+g.TAL+g.LK,g.yBB-2],
+      [g.xF,g.yPB],
+      [g.xF-g.TI,g.yPB+g.TH],[g.xI+g.TI,g.yPB+g.TH],
+      [g.xI,g.yPB+g.TAL],
+      [g.xI,g.yPB],[g.xT,g.yPB],
+      [g.xPL,g.yPB-g.PW],[g.xPL,g.yPT+g.PW],
+      [g.xT,g.yPT],
+      [g.xT,g.yTT],
+      [g.xT+g.TAL+g.LK,g.yTT],[g.xT+g.TAL+g.LK,g.yTT+2]
+    ];
+  }
+  if(bt==='cierre-automatico'){
+    return[
+      [g.xF,g.yCT+g.R],[g.xF+g.R,g.yCT],
+      [g.xD-g.R,g.yCT],[g.xD,g.yCT+g.R],
+      [g.xD,g.yTT],
+      [g.xD-g.TAL-g.LK,g.yTT],[g.xD-g.TAL-g.LK,g.yTT+2],
+      [g.xD,g.yPT],
+      [g.xD+g.TI,g.yPT-g.TH],[g.xD+g.A-g.TI,g.yPT-g.TH],
+      [g.xDR,g.yPT-g.TAL],[g.xDR,g.yPT],
+      [g.xDR,g.yPB],
+      [g.xD,g.yPB],
+      [g.xF,g.yPB],
+      [g.xI,g.yPB],
+      [g.xT,g.yPB],
+      [g.xPL,g.yPB-g.PW],[g.xPL,g.yPT+g.PW],
+      [g.xT,g.yPT],
+      [g.xI,g.yPT],[g.xI,g.yPT-g.TAL],
+      [g.xI+g.TI,g.yPT-g.TH],[g.xI+g.A-g.TI,g.yPT-g.TH],
+      [g.xF,g.yPT],
+      [g.xF+g.TAL+g.LK,g.yTT+2],[g.xF+g.TAL+g.LK,g.yTT],
+      [g.xF,g.yTT],
+      (function(){var s20=Math.sin(20*Math.PI/180),c20=Math.cos(20*Math.PI/180);return[g.xD-s20*0.07*g.A,g.yPB+c20*0.07*g.A];}()),
+      (function(){var s20=Math.sin(20*Math.PI/180),c20=Math.cos(20*Math.PI/180);return[g.xD-s20*0.07*g.A,g.yPB+c20*0.07*g.A+0.63*g.A];}()),
+      [g.xD-g.A/2,g.yPB+g.A/2],
+      [g.xF+g.L/2,g.yPB+g.A/2],
+      (function(){var c20=Math.cos(20*Math.PI/180);var caY2=g.yPB+c20*0.07*g.A+0.63*g.A;var t=caY2-(g.yPB+g.A/2);return[g.xD-g.A/2+t,caY2];}()),
+      [g.xF+g.L/2,g.yPB+g.A/2+S.cunaH],
+      (function(){var s20=Math.sin(20*Math.PI/180),c20=Math.cos(20*Math.PI/180);return[g.xD+s20*0.07*g.A,g.yPB+c20*0.07*g.A];}()),
+      (function(){var s20=Math.sin(20*Math.PI/180),c20=Math.cos(20*Math.PI/180);return[g.xD+s20*0.07*g.A,g.yPB+c20*0.07*g.A+0.53*g.A];}()),
+      (function(){var c20=Math.cos(20*Math.PI/180);var t=c20*0.07*g.A+0.53*g.A;return[g.xDR-t,g.yPB+t];}()),
+      (function(){var s20=Math.sin(20*Math.PI/180),c20=Math.cos(20*Math.PI/180);return[g.xI+s20*0.07*g.A,g.yPB+c20*0.07*g.A];}()),
+      (function(){var s20=Math.sin(20*Math.PI/180),c20=Math.cos(20*Math.PI/180);return[g.xI+s20*0.07*g.A,g.yPB+c20*0.07*g.A+0.53*g.A];}()),
+      (function(){var c20=Math.cos(20*Math.PI/180);var t=c20*0.07*g.A+0.53*g.A;return[g.xF-t,g.yPB+t];}()),
+      (function(){var s20=Math.sin(20*Math.PI/180),c20=Math.cos(20*Math.PI/180);return[g.xF+s20*0.07*g.A,g.yPB+c20*0.07*g.A];}()),
+      (function(){var c20=Math.cos(20*Math.PI/180);var caY2=g.yPB+c20*0.07*g.A+0.63*g.A;var ca34y=g.yPB+g.A/2+S.cunaH;return[g.xF+g.L/2-(caY2-ca34y),caY2];}()),
+      (function(){var s20=Math.sin(20*Math.PI/180),c20=Math.cos(20*Math.PI/180);return[g.xF+s20*0.07*g.A,g.yPB+c20*0.07*g.A+0.63*g.A];}())
+    ];
+  }
+  // doble-solapa
+  return[
+    [g.xF,g.yCT+g.R],[g.xF+g.R,g.yCT],
+    [g.xD-g.R,g.yCT],[g.xD,g.yCT+g.R],
+    [g.xD,g.yTT],
+    [g.xD-g.TAL-g.LK,g.yTT],[g.xD-g.TAL-g.LK,g.yTT+2],
+    [g.xD,g.yPT],
+    [g.xD+g.TI,g.yPT-g.TH],[g.xD+g.A-g.TI,g.yPT-g.TH],[g.xDR,g.yPT-g.TAL],[g.xDR,g.yPT],
+    [g.xDR,g.yPB],[g.xDR,g.yPB+g.TAL],
+    [g.xD+g.A-g.TI,g.yPB+g.TH],[g.xD+g.TI,g.yPB+g.TH],
+    [g.xD,g.yPB],
+    [g.xD,g.yBB],
+    [g.xD-g.TAL-g.LK,g.yBB],[g.xD-g.TAL-g.LK,g.yBB-2],
+    [g.xD,g.yCB-g.R],[g.xD-g.R,g.yCB],
+    [g.xF+g.R,g.yCB],[g.xF,g.yCB-g.R],
+    [g.xF,g.yBB],
+    [g.xF+g.TAL+g.LK,g.yBB],[g.xF+g.TAL+g.LK,g.yBB-2],
+    [g.xF,g.yPB],
+    [g.xI+g.A-g.TI,g.yPB+g.TH],[g.xI+g.TI,g.yPB+g.TH],
+    [g.xI,g.yPB+g.TAL],
+    [g.xI,g.yPB],[g.xT,g.yPB],
+    [g.xPL,g.yPB-g.PW],[g.xPL,g.yPT+g.PW],
+    [g.xT,g.yPT],[g.xI,g.yPT],[g.xI,g.yPT-g.TAL],
+    [g.xI+g.TI,g.yPT-g.TH],[g.xI+g.A-g.TI,g.yPT-g.TH],[g.xF,g.yPT],
+    [g.xF+g.TAL+g.LK,g.yTT+2],[g.xF+g.TAL+g.LK,g.yTT],
+    [g.xF,g.yTT]
+  ];
+}
+
+// Vértices del plano candado para el overlay (círculos verdes).
+// Empieza como copia de la base y se modifica con Erick.
+function vertsForCandado(g,bt){
+  var CW=S.cdW/2; // semiancho de la lengüeta, centrado en el panel
+  var CD=S.cdH;   // profundidad de la lengüeta
+  var cx=g.xF+g.L/2; // centro horizontal del panel frontal
+
+  if(bt==='doble-solapa'){
+    return[
+      // ── Cierre SUP (xF→xD, yCT→yTT) ──
+      [g.xF,g.yCT+g.R],[g.xF+g.R,g.yCT],                           // 1-2  TL round
+      [g.xD-g.R,g.yCT],[g.xD,g.yCT+g.R],                           // 3-4  TR round
+      [g.xD,g.yTT],                                                  // 5
+      [g.xD-g.TAL-g.LK,g.yTT],[g.xD-g.TAL-g.LK,g.yTT+2],          // 6-7  L-tab right
+      [g.xD,g.yPT],                                                  // 8
+      [g.xD+g.TI,g.yPT-g.TH],[g.xD+g.A-g.TI,g.yPT-g.TH],[g.xDR,g.yPT-g.TAL],[g.xDR,g.yPT], // 9-12
+      [g.xDR,g.yPB],[g.xDR,g.yPB+g.TAL],                           // 13-14
+      [g.xD+g.A-g.TI,g.yPB+g.TH],[g.xD+g.TI,g.yPB+g.TH],          // 15-16
+      [g.xD,g.yPB],                                                  // 17
+      // ── Cierre INF (xF→xD, yBB→yCB) ──
+      [g.xD,g.yBB],                                                  // 18
+      [g.xD-g.TAL-g.LK,g.yBB],[g.xD-g.TAL-g.LK,g.yBB-2],          // 19-20 L-tab right
+      [g.xD,g.yCB-g.R],[g.xD-g.R,g.yCB],                           // 21-22
+      [g.xF+g.R,g.yCB],[g.xF,g.yCB-g.R],                           // 23-24
+      [g.xF,g.yBB],                                                  // 25
+      [g.xF+g.TAL+g.LK,g.yBB],[g.xF+g.TAL+g.LK,g.yBB-2],          // 26-27 L-tab left
+      [g.xF,g.yPB],                                                  // 28
+      [g.xI+g.A-g.TI,g.yPB+g.TH],[g.xI+g.TI,g.yPB+g.TH],          // 29-30
+      [g.xI,g.yPB+g.TAL],                                           // 31
+      [g.xI,g.yPB],[g.xT,g.yPB],                                    // 32-33
+      [g.xPL,g.yPB-g.PW],[g.xPL,g.yPT+g.PW],                       // 34-35
+      [g.xT,g.yPT],[g.xT+g.L/2-S.lockW/2,g.yPT],                         // 36-37 (gap 37→38)
+      [g.xT+g.L/2+S.lockW/2,g.yPT],[g.xI,g.yPT],[g.xI,g.yPT-g.TAL],   // 38-40
+      [g.xI+g.TI,g.yPT-g.TH],[g.xI+g.A-g.TI,g.yPT-g.TH],[g.xF,g.yPT], // 41-43
+      [g.xF+g.TAL+g.LK,g.yTT+2],[g.xF+g.TAL+g.LK,g.yTT],          // 44-45 L-tab left
+      [g.xF,g.yTT],                                                  // 46
+      // ── Ranura candado (lado izquierdo del gap, desde v37) ──
+      [g.xT+g.L/2-S.lockW/2+S.lockA, g.yPT],                             // 47  lockA mm derecha desde v37
+      [g.xT+g.L/2-S.lockW/2+S.lockA+Math.sqrt(2), g.yPT+Math.sqrt(2)],  // 48  2mm 45° abajo-derecha desde v47
+      // ── Ranura candado (lado derecho del gap, desde v38) ──
+      [g.xT+g.L/2+S.lockW/2-S.lockA, g.yPT],                             // 49  lockA mm izquierda desde v38
+      [g.xT+g.L/2+S.lockW/2-S.lockA-Math.sqrt(2), g.yPT+Math.sqrt(2)],  // 50  2mm 45° abajo-izquierda desde v49
+      // ── Altura del candado (v37 y v38, verticales arriba/abajo, cada una = lockH/2) ──
+      [g.xT+g.L/2-S.lockW/2, g.yPT+S.lockH/2],  // 51  v37 → lockH/2 abajo (vertical)
+      [g.xT+g.L/2-S.lockW/2+(S.lockH/2)*Math.tan(S.lockAngle*Math.PI/180), g.yPT-S.lockH/2],  // 52  v37 → arriba inclinado
+      [g.xT+g.L/2+S.lockW/2, g.yPT+S.lockH/2],  // 53  v38 → lockH/2 abajo (vertical)
+      [g.xT+g.L/2+S.lockW/2-(S.lockH/2)*Math.tan(S.lockAngle*Math.PI/180), g.yPT-S.lockH/2],  // 54  v38 → arriba inclinado
+      // ── Espejo inferior (borde yPB, entre v33-v32) ──
+      [g.xT+g.L/2-S.lockW/2, g.yPB],                                                                           // 55  bv37
+      [g.xT+g.L/2+S.lockW/2, g.yPB],                                                                           // 56  bv38
+      [g.xT+g.L/2-S.lockW/2+S.lockA, g.yPB],                                                                   // 57  bv47
+      [g.xT+g.L/2-S.lockW/2+S.lockA+Math.sqrt(2), g.yPB-Math.sqrt(2)],                                        // 58  bv48
+      [g.xT+g.L/2+S.lockW/2-S.lockA, g.yPB],                                                                   // 59  bv49
+      [g.xT+g.L/2+S.lockW/2-S.lockA-Math.sqrt(2), g.yPB-Math.sqrt(2)],                                        // 60  bv50
+      [g.xT+g.L/2-S.lockW/2, g.yPB-S.lockH/2],                                                                 // 61  bv51
+      [g.xT+g.L/2+S.lockW/2, g.yPB-S.lockH/2],                                                                 // 62  bv53
+      [g.xT+g.L/2-S.lockW/2+(S.lockH/2)*Math.tan(S.lockAngle*Math.PI/180), g.yPB+S.lockH/2],                  // 63  bv52
+      [g.xT+g.L/2+S.lockW/2-(S.lockH/2)*Math.tan(S.lockAngle*Math.PI/180), g.yPB+S.lockH/2],                  // 64  bv54
+      // ── División de la línea 45→6: centrada en xF+L/2, ancho lockW+2 ──
+      [g.xF+g.L/2-S.lockW/2-1, g.yTT+1],                                                                        // 65  fin seg 1
+      [g.xF+g.L/2+S.lockW/2+1, g.yTT+1],                                                                        // 66  inicio seg 3
+      // ── Extremos de las líneas de corte desde v65 y v66 ──
+      [g.xF+g.L/2-S.lockW/2+S.lockA, g.yTT+1],                                                                  // 67  v65 + lockA+1
+      [g.xF+g.L/2+S.lockW/2-S.lockA, g.yTT+1],                                                                  // 68  v66 - lockA-1
+      (function(){var sq2=Math.sqrt(2);return[g.xF+g.L/2-S.lockW/2+S.lockA+sq2, g.yTT+1-sq2];}()),             // 69  v67 → 45° arriba-derecha
+      (function(){var sq2=Math.sqrt(2);return[g.xF+g.L/2+S.lockW/2-S.lockA-sq2, g.yTT+1-sq2];}()),             // 70  v68 → 45° arriba-izquierda
+      // ── Espejo inferior (yBB-1) ──
+      [g.xF+g.L/2-S.lockW/2-1, g.yBB-1],                                                                        // 71  fin seg 1 inferior
+      [g.xF+g.L/2+S.lockW/2+1, g.yBB-1],                                                                        // 72  inicio seg 3 inferior
+      [g.xF+g.L/2-S.lockW/2+S.lockA, g.yBB-1],                                                                  // 73  v71 + lockA+1
+      [g.xF+g.L/2+S.lockW/2-S.lockA, g.yBB-1],                                                                  // 74  v72 - lockA-1
+      (function(){var sq2=Math.sqrt(2);return[g.xF+g.L/2-S.lockW/2+S.lockA+sq2, g.yBB-1+sq2];}()),             // 75  v73 → 45° abajo-derecha
+      (function(){var sq2=Math.sqrt(2);return[g.xF+g.L/2+S.lockW/2-S.lockA-sq2, g.yBB-1+sq2];}())              // 76  v74 → 45° abajo-izquierda
+    ];
+  }
+
+  if(bt==='doble-solapa-alt'){
+    return[
+      [g.xT,g.yCT+g.R],[g.xT+g.R,g.yCT],                              // 1-2
+      [g.xI-g.R,g.yCT],[g.xI,g.yCT+g.R],                              // 3-4
+      [g.xI,g.yTT],                                                     // 5
+      [g.xI-g.TAL-g.LK,g.yTT],[g.xI-g.TAL-g.LK,g.yTT+2],             // 6-7
+      [g.xI,g.yPT],                                                     // 8
+      [g.xI+g.TI,g.yPT-g.TH],[g.xF-g.TI,g.yPT-g.TH],                 // 9-10
+      [g.xF,g.yPT-g.TAL],[g.xF,g.yPT],                                 // 11-12
+      [g.xD,g.yPT],                                                     // 13
+      [g.xD,g.yPT-g.TAL],                                              // 14
+      [g.xD+g.TI,g.yPT-g.TH],[g.xD+g.A-g.TI,g.yPT-g.TH],             // 15-16
+      [g.xDR,g.yPT],                                                    // 17
+      [g.xDR,g.yPB],                                                    // 18
+      [g.xDR,g.yPB+g.TAL],                                             // 19
+      [g.xD+g.A-g.TI,g.yPB+g.TH],[g.xD+g.TI,g.yPB+g.TH],             // 20-21
+      [g.xD,g.yPB],                                                     // 22
+      [g.xD,g.yBB],                                                     // 23
+      [g.xD-g.TAL-g.LK,g.yBB],[g.xD-g.TAL-g.LK,g.yBB-2],             // 24-25
+      [g.xD,g.yCB-g.R],[g.xD-g.R,g.yCB],                              // 26-27
+      [g.xF+g.R,g.yCB],[g.xF,g.yCB-g.R],                              // 28-29
+      [g.xF,g.yBB],                                                     // 30
+      [g.xF+g.TAL+g.LK,g.yBB],[g.xF+g.TAL+g.LK,g.yBB-2],             // 31-32
+      [g.xF,g.yPB],                                                     // 33
+      [g.xF-g.TI,g.yPB+g.TH],[g.xI+g.TI,g.yPB+g.TH],                 // 34-35
+      [g.xI,g.yPB+g.TAL],                                              // 36
+      [g.xI,g.yPB],[g.xT,g.yPB],                                       // 37-38
+      [g.xPL,g.yPB-g.PW],[g.xPL,g.yPT+g.PW],                          // 39-40
+      [g.xT,g.yPT],                                                     // 41
+      [g.xT,g.yTT],                                                     // 42
+      [g.xT+g.TAL+g.LK,g.yTT],[g.xT+g.TAL+g.LK,g.yTT+2],             // 43-44
+      // ── Candado superior: FRONTAL top (v12→v13), centrado en xF+L/2 ──
+      [g.xF+g.L/2-S.lockW/2, g.yPT],                                                                           // 45  g1_top
+      [g.xF+g.L/2+S.lockW/2, g.yPT],                                                                           // 46  g2_top
+      [g.xF+g.L/2-S.lockW/2+S.lockA, g.yPT],                                                                   // 47  anclaje izq
+      [g.xF+g.L/2-S.lockW/2+S.lockA+Math.sqrt(2), g.yPT+Math.sqrt(2)],                                        // 48  45° abajo-der
+      [g.xF+g.L/2+S.lockW/2-S.lockA, g.yPT],                                                                   // 49  anclaje der
+      [g.xF+g.L/2+S.lockW/2-S.lockA-Math.sqrt(2), g.yPT+Math.sqrt(2)],                                        // 50  45° abajo-izq
+      [g.xF+g.L/2-S.lockW/2, g.yPT+S.lockH/2],                                                                 // 51  abajo izq
+      [g.xF+g.L/2+S.lockW/2, g.yPT+S.lockH/2],                                                                 // 52  abajo der
+      [g.xF+g.L/2-S.lockW/2+(S.lockH/2)*Math.tan(S.lockAngle*Math.PI/180), g.yPT-S.lockH/2],                  // 53  arriba izq inclinado
+      [g.xF+g.L/2+S.lockW/2-(S.lockH/2)*Math.tan(S.lockAngle*Math.PI/180), g.yPT-S.lockH/2],                  // 54  arriba der inclinado
+      // ── Espejo inferior: TRASERO bottom (v38→v37), centrado en xT+L/2 ──
+      [g.xT+g.L/2-S.lockW/2, g.yPB],                                                                           // 55  g1_bot
+      [g.xT+g.L/2+S.lockW/2, g.yPB],                                                                           // 56  g2_bot
+      [g.xT+g.L/2-S.lockW/2+S.lockA, g.yPB],                                                                   // 57  anclaje izq
+      [g.xT+g.L/2-S.lockW/2+S.lockA+Math.sqrt(2), g.yPB-Math.sqrt(2)],                                        // 58  45° arriba-der
+      [g.xT+g.L/2+S.lockW/2-S.lockA, g.yPB],                                                                   // 59  anclaje der
+      [g.xT+g.L/2+S.lockW/2-S.lockA-Math.sqrt(2), g.yPB-Math.sqrt(2)],                                        // 60  45° arriba-izq
+      [g.xT+g.L/2-S.lockW/2, g.yPB-S.lockH/2],                                                                 // 61  arriba izq (en TRASERO)
+      [g.xT+g.L/2+S.lockW/2, g.yPB-S.lockH/2],                                                                 // 62  arriba der (en TRASERO)
+      [g.xT+g.L/2-S.lockW/2+(S.lockH/2)*Math.tan(S.lockAngle*Math.PI/180), g.yPB+S.lockH/2],                  // 63  abajo izq inclinado
+      [g.xT+g.L/2+S.lockW/2-(S.lockH/2)*Math.tan(S.lockAngle*Math.PI/180), g.yPB+S.lockH/2],                  // 64  abajo der inclinado
+      // ── Cierre superior (yTT+1): centrado en xT+L/2, diagonales arriba ──
+      [g.xT+g.L/2-S.lockW/2-1, g.yTT+1],                                                                        // 65  gap izq top
+      [g.xT+g.L/2+S.lockW/2+1, g.yTT+1],                                                                        // 66  gap der top
+      [g.xT+g.L/2-S.lockW/2+S.lockA, g.yTT+1],                                                                  // 67  corte izq top
+      [g.xT+g.L/2+S.lockW/2-S.lockA, g.yTT+1],                                                                  // 68  corte der top
+      (function(){var sq2=Math.sqrt(2);return[g.xT+g.L/2-S.lockW/2+S.lockA+sq2, g.yTT+1-sq2];}()),             // 69  diagonal izq arriba
+      (function(){var sq2=Math.sqrt(2);return[g.xT+g.L/2+S.lockW/2-S.lockA-sq2, g.yTT+1-sq2];}()),             // 70  diagonal der arriba
+      // ── Cierre inferior (yBB-1): centrado en xF+L/2, diagonales abajo ──
+      [g.xF+g.L/2-S.lockW/2-1, g.yBB-1],                                                                        // 71  gap izq bot
+      [g.xF+g.L/2+S.lockW/2+1, g.yBB-1],                                                                        // 72  gap der bot
+      [g.xF+g.L/2-S.lockW/2+S.lockA, g.yBB-1],                                                                  // 73  corte izq bot
+      [g.xF+g.L/2+S.lockW/2-S.lockA, g.yBB-1],                                                                  // 74  corte der bot
+      (function(){var sq2=Math.sqrt(2);return[g.xF+g.L/2-S.lockW/2+S.lockA+sq2, g.yBB-1+sq2];}()),             // 75  diagonal izq abajo
+      (function(){var sq2=Math.sqrt(2);return[g.xF+g.L/2+S.lockW/2-S.lockA-sq2, g.yBB-1+sq2];}())              // 76  diagonal der abajo
+    ];
+  }
+  if(bt==='cierre-automatico'){
+    return[
+      [g.xF,g.yCT+g.R],[g.xF+g.R,g.yCT],                              // 1-2
+      [g.xD-g.R,g.yCT],[g.xD,g.yCT+g.R],                              // 3-4
+      [g.xD,g.yTT],                                                     // 5
+      [g.xD-g.TAL-g.LK,g.yTT],[g.xD-g.TAL-g.LK,g.yTT+2],             // 6-7
+      [g.xD,g.yPT],                                                     // 8
+      [g.xD+g.TI,g.yPT-g.TH],[g.xD+g.A-g.TI,g.yPT-g.TH],             // 9-10
+      [g.xDR,g.yPT-g.TAL],[g.xDR,g.yPT],                              // 11-12
+      [g.xDR,g.yPB],                                                    // 13
+      [g.xD,g.yPB],                                                     // 14
+      [g.xF,g.yPB],                                                     // 15
+      [g.xI,g.yPB],                                                     // 16
+      [g.xT,g.yPB],                                                     // 17
+      [g.xPL,g.yPB-g.PW],[g.xPL,g.yPT+g.PW],                          // 18-19
+      [g.xT,g.yPT],                                                     // 20
+      [g.xI,g.yPT],[g.xI,g.yPT-g.TAL],                                 // 21-22
+      [g.xI+g.TI,g.yPT-g.TH],[g.xI+g.A-g.TI,g.yPT-g.TH],             // 23-24
+      [g.xF,g.yPT],                                                     // 25
+      [g.xF+g.TAL+g.LK,g.yTT+2],[g.xF+g.TAL+g.LK,g.yTT],             // 26-27
+      [g.xF,g.yTT],                                                     // 28
+      (function(){var s20=Math.sin(20*Math.PI/180),c20=Math.cos(20*Math.PI/180);return[g.xD-s20*0.07*g.A,g.yPB+c20*0.07*g.A];}()),   // 29
+      (function(){var s20=Math.sin(20*Math.PI/180),c20=Math.cos(20*Math.PI/180);return[g.xD-s20*0.07*g.A,g.yPB+c20*0.07*g.A+0.63*g.A];}()), // 30
+      [g.xD-g.A/2,g.yPB+g.A/2],                                        // 31
+      [g.xF+g.L/2,g.yPB+g.A/2],                                        // 32
+      (function(){var c20=Math.cos(20*Math.PI/180);var caY2=g.yPB+c20*0.07*g.A+0.63*g.A;var t=caY2-(g.yPB+g.A/2);return[g.xD-g.A/2+t,caY2];}()), // 33
+      [g.xF+g.L/2,g.yPB+g.A/2+S.cunaH],                               // 34
+      (function(){var s20=Math.sin(20*Math.PI/180),c20=Math.cos(20*Math.PI/180);return[g.xD+s20*0.07*g.A,g.yPB+c20*0.07*g.A];}()),   // 35
+      (function(){var s20=Math.sin(20*Math.PI/180),c20=Math.cos(20*Math.PI/180);return[g.xD+s20*0.07*g.A,g.yPB+c20*0.07*g.A+0.53*g.A];}()), // 36
+      (function(){var c20=Math.cos(20*Math.PI/180);var t=c20*0.07*g.A+0.53*g.A;return[g.xDR-t,g.yPB+t];}()),                          // 37
+      (function(){var s20=Math.sin(20*Math.PI/180),c20=Math.cos(20*Math.PI/180);return[g.xI+s20*0.07*g.A,g.yPB+c20*0.07*g.A];}()),   // 38
+      (function(){var s20=Math.sin(20*Math.PI/180),c20=Math.cos(20*Math.PI/180);return[g.xI+s20*0.07*g.A,g.yPB+c20*0.07*g.A+0.53*g.A];}()), // 39
+      (function(){var c20=Math.cos(20*Math.PI/180);var t=c20*0.07*g.A+0.53*g.A;return[g.xF-t,g.yPB+t];}()),                          // 40
+      (function(){var s20=Math.sin(20*Math.PI/180),c20=Math.cos(20*Math.PI/180);return[g.xF+s20*0.07*g.A,g.yPB+c20*0.07*g.A];}()),   // 41
+      (function(){var c20=Math.cos(20*Math.PI/180);var caY2=g.yPB+c20*0.07*g.A+0.63*g.A;var ca34y=g.yPB+g.A/2+S.cunaH;return[g.xF+g.L/2-(caY2-ca34y),caY2];}()), // 42
+      (function(){var s20=Math.sin(20*Math.PI/180),c20=Math.cos(20*Math.PI/180);return[g.xF+s20*0.07*g.A,g.yPB+c20*0.07*g.A+0.63*g.A];}()), // 43
+      // ── Candado superior (borde yPT, v20→v21) ──
+      [g.xT+g.L/2-S.lockW/2, g.yPT],                                                                           // 44  g1 (gap izq)
+      [g.xT+g.L/2+S.lockW/2, g.yPT],                                                                           // 45  g2 (gap der)
+      [g.xT+g.L/2-S.lockW/2+S.lockA, g.yPT],                                                                   // 46  anclaje izq
+      [g.xT+g.L/2-S.lockW/2+S.lockA+Math.sqrt(2), g.yPT+Math.sqrt(2)],                                        // 47  45° abajo-der
+      [g.xT+g.L/2+S.lockW/2-S.lockA, g.yPT],                                                                   // 48  anclaje der
+      [g.xT+g.L/2+S.lockW/2-S.lockA-Math.sqrt(2), g.yPT+Math.sqrt(2)],                                        // 49  45° abajo-izq
+      [g.xT+g.L/2-S.lockW/2, g.yPT+S.lockH/2],                                                                 // 50  abajo izq (vertical)
+      [g.xT+g.L/2+S.lockW/2, g.yPT+S.lockH/2],                                                                 // 51  abajo der (vertical)
+      [g.xT+g.L/2-S.lockW/2+(S.lockH/2)*Math.tan(S.lockAngle*Math.PI/180), g.yPT-S.lockH/2],                  // 52  arriba izq inclinado
+      [g.xT+g.L/2+S.lockW/2-(S.lockH/2)*Math.tan(S.lockAngle*Math.PI/180), g.yPT-S.lockH/2],                  // 53  arriba der inclinado
+      // ── Cierre superior (yTT+1): centrado en xF+L/2, diagonales arriba ──
+      [g.xF+g.L/2-S.lockW/2-1, g.yTT+1],                                                                        // 54  gap izq
+      [g.xF+g.L/2+S.lockW/2+1, g.yTT+1],                                                                        // 55  gap der
+      [g.xF+g.L/2-S.lockW/2+S.lockA, g.yTT+1],                                                                  // 56  corte izq
+      [g.xF+g.L/2+S.lockW/2-S.lockA, g.yTT+1],                                                                  // 57  corte der
+      (function(){var sq2=Math.sqrt(2);return[g.xF+g.L/2-S.lockW/2+S.lockA+sq2, g.yTT+1-sq2];}()),             // 58  diagonal izq arriba
+      (function(){var sq2=Math.sqrt(2);return[g.xF+g.L/2+S.lockW/2-S.lockA-sq2, g.yTT+1-sq2];}())              // 59  diagonal der arriba
+    ];
+  }
+  return [];
+}
+// Contorno del troquel en versión candado. Reemplaza contourPath() cuando S.candado===true.
+// La lengüeta y sus parámetros (cdW, cdH, ...) se construyen vértice a vértice con Erick.
+function contourPathCandado(g,bt){
+  bt=bt||S.boxType;
+  // Para doble-solapa: gap en el borde superior del panel TRASERO (yPT) entre xT+L/3 y xT+2L/3
+  if(bt==='doble-solapa'){
+    var xF=g.xF,xD=g.xD,xDR=g.xDR,xI=g.xI,xT=g.xT,xPL=g.xPL;
+    var yCT=g.yCT,yTT=g.yTT,yPT=g.yPT,yPB=g.yPB,yBB=g.yBB,yCB=g.yCB;
+    var R=g.R,TH=g.TH,TI=g.TI,A=g.A,L=g.L,TAL=g.TAL;
+    var tlTip=xI+TI,tlEnd=xI+A-TI,tlTal=xI,tlX2=xF;
+    var trTip=xD+TI,trEnd=xD+A-TI,trTal=xDR;
+    var blTip=xI+TI,blEnd=xI+A-TI,blTal=xI;
+    var brTip=xD+TI,brEnd=xD+A-TI,brTal=xDR;
+    var g1=xT+L/2-S.lockW/2, g2=xT+L/2+S.lockW/2; // extremos del gap, centrados
+    return'M '+xF+' '+(yCT+R)+
+      ' A '+R+' '+R+' 0 0 1 '+(xF+R)+' '+yCT+
+      ' L '+(xD-R)+' '+yCT+
+      ' A '+R+' '+R+' 0 0 1 '+xD+' '+(yCT+R)+
+      ' L '+xD+' '+yTT+' L '+xD+' '+yPT+
+      ' L '+trTip+' '+(yPT-TH)+' L '+trEnd+' '+(yPT-TH)+
+      ' L '+trTal+' '+(yPT-TAL)+
+      ' L '+xDR+' '+yPT+' L '+xDR+' '+yPB+
+      ' L '+brTal+' '+(yPB+TAL)+
+      ' L '+brEnd+' '+(yPB+TH)+' L '+brTip+' '+(yPB+TH)+
+      ' L '+xD+' '+yPB+' L '+xD+' '+yBB+
+      ' L '+xD+' '+(yCB-R)+
+      ' A '+R+' '+R+' 0 0 1 '+(xD-R)+' '+yCB+
+      ' L '+(xF+R)+' '+yCB+
+      ' A '+R+' '+R+' 0 0 1 '+xF+' '+(yCB-R)+
+      ' L '+xF+' '+yBB+' L '+xF+' '+yPB+
+      ' L '+blEnd+' '+(yPB+TH)+' L '+blTip+' '+(yPB+TH)+
+      ' L '+blTal+' '+(yPB+TAL)+
+      ' L '+xI+' '+yPB+' L '+g2+' '+yPB+   // xI → g2 (dibujado)
+      ' M '+g1+' '+yPB+' L '+xT+' '+yPB+   // gap inferior, luego g1 → xT
+      ' L '+xPL+' '+(yPB-g.PW)+' L '+xPL+' '+(yPT+g.PW)+
+      ' L '+xT+' '+yPT+' L '+g1+' '+yPT+   // xT → g1 (dibujado)
+      ' M '+g2+' '+yPT+' L '+xI+' '+yPT+   // gap, luego g2 → xI
+      ' L '+tlTal+' '+(yPT-TAL)+
+      ' L '+tlTip+' '+(yPT-TH)+' L '+tlEnd+' '+(yPT-TH)+
+      ' L '+tlX2+' '+yPT+' L '+xF+' '+yTT+' L '+xF+' '+(yCT+R); // cierre explícito, no Z
+  }
+  if(bt==='cierre-automatico'){
+    var xF=g.xF,xD=g.xD,xDR=g.xDR,xI=g.xI,xT=g.xT,xPL=g.xPL;
+    var yCT=g.yCT,yTT=g.yTT,yPT=g.yPT,yPB=g.yPB;
+    var R=g.R,TH=g.TH,TI=g.TI,A=g.A,L=g.L,TAL=g.TAL;
+    var tlTip=xI+TI,tlEnd=xI+A-TI,tlTal=xI,tlX2=xF;
+    var trTip=xD+TI,trEnd=xD+A-TI,trTal=xDR;
+    var g1=xT+L/2-S.lockW/2, g2=xT+L/2+S.lockW/2;
+    return'M '+xF+' '+(yCT+R)+
+      ' A '+R+' '+R+' 0 0 1 '+(xF+R)+' '+yCT+
+      ' L '+(xD-R)+' '+yCT+
+      ' A '+R+' '+R+' 0 0 1 '+xD+' '+(yCT+R)+
+      ' L '+xD+' '+yTT+' L '+xD+' '+yPT+
+      ' L '+trTip+' '+(yPT-TH)+' L '+trEnd+' '+(yPT-TH)+
+      ' L '+trTal+' '+(yPT-TAL)+
+      ' L '+xDR+' '+yPT+' L '+xDR+' '+yPB+
+      ' L '+xT+' '+yPB+
+      ' L '+xPL+' '+(yPB-g.PW)+' L '+xPL+' '+(yPT+g.PW)+
+      ' L '+xT+' '+yPT+' L '+g1+' '+yPT+     // xT → g1 (dibujado)
+      ' M '+g2+' '+yPT+' L '+xI+' '+yPT+     // gap, g2 → xI
+      ' L '+tlTal+' '+(yPT-TAL)+
+      ' L '+tlTip+' '+(yPT-TH)+' L '+tlEnd+' '+(yPT-TH)+
+      ' L '+tlX2+' '+yPT+' L '+xF+' '+yTT+' L '+xF+' '+(yCT+R); // cierre explícito, no Z
+  }
+  if(bt==='doble-solapa-alt'){
+    var xF=g.xF,xD=g.xD,xDR=g.xDR,xI=g.xI,xT=g.xT,xPL=g.xPL;
+    var yCT=g.yCT,yTT=g.yTT,yPT=g.yPT,yPB=g.yPB,yBB=g.yBB,yCB=g.yCB;
+    var R=g.R,TH=g.TH,TI=g.TI,A=g.A,L=g.L,TAL=g.TAL;
+    var tlTip=xI+TI,tlEnd=xI+A-TI,tlX2=xF,trX=xD,trTip=xD+TI,trEnd=xD+A-TI,trTal=xDR;
+    var blTip=xI+TI,blEnd=xI+A-TI,blTal=xI;
+    var brTip=xD+TI,brEnd=xD+A-TI,brTal=xDR;
+    var g1t=xF+L/2-S.lockW/2, g2t=xF+L/2+S.lockW/2; // gap top (FRONTAL)
+    var g1b=xT+L/2-S.lockW/2, g2b=xT+L/2+S.lockW/2; // gap bottom (TRASERO)
+    return'M '+xT+' '+(yCT+R)+
+      ' A '+R+' '+R+' 0 0 1 '+(xT+R)+' '+yCT+
+      ' L '+(xI-R)+' '+yCT+
+      ' A '+R+' '+R+' 0 0 1 '+xI+' '+(yCT+R)+
+      ' L '+xI+' '+yTT+' L '+xI+' '+yPT+
+      ' L '+tlTip+' '+(yPT-TH)+' L '+tlEnd+' '+(yPT-TH)+
+      ' L '+tlX2+' '+(yPT-TAL)+
+      ' L '+tlX2+' '+yPT+' L '+g1t+' '+yPT+      // xF → g1t
+      ' M '+g2t+' '+yPT+' L '+xD+' '+yPT+         // gap top, g2t → xD
+      ' L '+trX+' '+(yPT-TAL)+
+      ' L '+trTip+' '+(yPT-TH)+' L '+trEnd+' '+(yPT-TH)+
+      ' L '+trTal+' '+yPT+' L '+xDR+' '+yPT+' L '+xDR+' '+yPB+
+      ' L '+brTal+' '+(yPB+TAL)+
+      ' L '+brEnd+' '+(yPB+TH)+' L '+brTip+' '+(yPB+TH)+
+      ' L '+xD+' '+yPB+' L '+xD+' '+yBB+
+      ' L '+xD+' '+(yCB-R)+
+      ' A '+R+' '+R+' 0 0 1 '+(xD-R)+' '+yCB+
+      ' L '+(xF+R)+' '+yCB+
+      ' A '+R+' '+R+' 0 0 1 '+xF+' '+(yCB-R)+
+      ' L '+xF+' '+yBB+' L '+xF+' '+yPB+
+      ' L '+blEnd+' '+(yPB+TH)+' L '+blTip+' '+(yPB+TH)+
+      ' L '+blTal+' '+(yPB+TAL)+
+      ' L '+xI+' '+yPB+' L '+g2b+' '+yPB+         // xI → g2b
+      ' M '+g1b+' '+yPB+' L '+xT+' '+yPB+          // gap bottom, g1b → xT
+      ' L '+xPL+' '+(yPB-g.PW)+' L '+xPL+' '+(yPT+g.PW)+
+      ' L '+xT+' '+yPT+
+      ' L '+xT+' '+(yCT+R); // cierre explícito, no Z
+  }
+  return contourPath(g,bt); // fallback para otros tipos
+}
+
+// Plano SVG completo para la versión candado.
+// Copia exacta de buildSVG() como punto de partida — se modifica vértice a vértice con Erick.
+function buildSVGCandado(g,id,opts){
+  var L=g.L,A=g.A,H=g.H,PW=g.PW,CH=g.CH,R=g.R,TH=g.TH,TAL=g.TAL,LK=g.LK;
+  var xT=g.xT,xI=g.xI,xF=g.xF,xD=g.xD,xDR=g.xDR,xPL=g.xPL;
+  var yPT=g.yPT,yPB=g.yPB,yTT=g.yTT,yCT=g.yCT,yBB=g.yBB,yCB=g.yCB;
+  var vx=g.vx,vy=g.vy,vw=g.vw,vh=g.vh;
+  var bt=S.boxType;
+  if(bt==='cierre-automatico'){var _pad=Math.max(g.R+2,2);var _caBot=g.yPB+Math.cos(20*Math.PI/180)*0.07*g.A+0.63*g.A;vy=g.yCT-g.R-_pad;vh=_caBot+_pad-vy;}
+  var showUI=opts&&opts.showUI;
+  var tc=showUI?getTC():null;
+
+  var nc=S.noColor;
+  function rgba(hex,op){return nc?'transparent':'rgba('+parseInt(hex.slice(1,3),16)+','+parseInt(hex.slice(3,5),16)+','+parseInt(hex.slice(5,7),16)+','+op+')';}
+  var fPrin=rgba(S.panPrin,S.panPrinOp),fTapa=rgba(S.panTapa,S.panTapaOp),fCierre=rgba(S.panCierre,S.panCierreOp),fTrap=rgba(S.panTrap,S.panTrapOp),fPega=rgba(S.panPega,S.panPegaOp);
+  var cDash=S.cutDash?'2 1':'none';
+  var fDash=S.foldDash?'2 1':'none';
+  var swC=(S.cutStroke*PT2MM).toFixed(3);
+  var swF=(S.foldStroke*PT2MM).toFixed(3);
+  var showCotas=showUI&&S.showCotas;
+  var aid='ar-'+id;
+  var s='';
+
+  s+='<svg viewBox="'+vx+' '+vy+' '+vw+' '+vh+'" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">';
+
+  if(showUI){
+    s+='<defs>';
+    s+='<marker id="'+aid+'" viewBox="0 0 6 6" refX="6" refY="3" markerWidth="4" markerHeight="4" orient="auto"><path d="M0,0 L6,3 L0,6Z" fill="'+tc.muted+'"/></marker>';
+    s+='</defs>';
+  }
+
+  // Panel fills
+  s+='<rect x="'+xT+'" y="'+yPT+'" width="'+L+'" height="'+H+'" fill="'+fPrin+'"/>';
+  s+='<rect x="'+xI+'" y="'+yPT+'" width="'+A+'" height="'+H+'" fill="'+fPrin+'"/>';
+  s+='<rect x="'+xF+'" y="'+yPT+'" width="'+L+'" height="'+H+'" fill="'+fPrin+'"/>';
+  s+='<rect x="'+xD+'" y="'+yPT+'" width="'+A+'" height="'+H+'" fill="'+fPrin+'"/>';
+
+  if(bt==='doble-solapa-alt'){
+    s+='<rect x="'+xT+'" y="'+yTT+'" width="'+L+'" height="'+A+'" fill="'+fTapa+'"/>';
+    s+='<rect x="'+xF+'" y="'+yPB+'" width="'+L+'" height="'+A+'" fill="'+fTapa+'"/>';
+    if(R>0){
+      s+='<path d="M '+xT+' '+(yCT+R)+' A '+R+' '+R+' 0 0 1 '+(xT+R)+' '+yCT+' L '+(xI-R)+' '+yCT+' A '+R+' '+R+' 0 0 1 '+xI+' '+(yCT+R)+' L '+xI+' '+yTT+' L '+xT+' '+yTT+' Z" fill="'+fCierre+'"/>';
+    } else {
+      s+='<rect x="'+xT+'" y="'+yCT+'" width="'+L+'" height="'+(yTT-yCT)+'" fill="'+fCierre+'"/>';
+    }
+    if(R>0){
+      s+='<path d="M '+xF+' '+yBB+' L '+xD+' '+yBB+' L '+xD+' '+(yCB-R)+' A '+R+' '+R+' 0 0 1 '+(xD-R)+' '+yCB+' L '+(xF+R)+' '+yCB+' A '+R+' '+R+' 0 0 1 '+xF+' '+(yCB-R)+' Z" fill="'+fCierre+'"/>';
+    } else {
+      s+='<rect x="'+xF+'" y="'+yBB+'" width="'+L+'" height="'+(yCB-yBB)+'" fill="'+fCierre+'"/>';
+    }
+  } else {
+    s+='<rect x="'+xF+'" y="'+yTT+'" width="'+L+'" height="'+A+'" fill="'+fTapa+'"/>';
+    if(R>0){
+      s+='<path d="M '+xF+' '+(yCT+R)+' A '+R+' '+R+' 0 0 1 '+(xF+R)+' '+yCT+' L '+(xD-R)+' '+yCT+' A '+R+' '+R+' 0 0 1 '+xD+' '+(yCT+R)+' L '+xD+' '+yTT+' L '+xF+' '+yTT+' Z" fill="'+fCierre+'"/>';
+    } else {
+      s+='<rect x="'+xF+'" y="'+yCT+'" width="'+L+'" height="'+(yTT-yCT)+'" fill="'+fCierre+'"/>';
+    }
+    if(bt==='cierre-automatico'){
+      var _s20=Math.sin(20*Math.PI/180),_c20=Math.cos(20*Math.PI/180);
+      var _caY1=yPB+_c20*0.07*A, _caY2=_caY1+0.63*A;
+      var _v15x=xF,         _v15y=yPB;
+      var _v35x=xF+_s20*0.07*A, _v35y=_caY1;
+      var _v37x=_v35x,      _v37y=_caY2;
+      var _v34x=xF+L/2,     _v34y=yPB+A/2+S.cunaH;
+      var _v36x=_v34x-(_caY2-_v34y), _v36y=_caY2;
+      var _v32x=xF+L/2,     _v32y=yPB+A/2;
+      var _v31x=xD-A/2,     _v31y=yPB+A/2;
+      var _ca33t=_caY2-_v31y;
+      var _v33x=_v31x+_ca33t, _v33y=_caY2;
+      var _v30x=xD-_s20*0.07*A, _v30y=_caY2;
+      var _v29x=_v30x,      _v29y=_caY1;
+      var _v14x=xD,         _v14y=yPB;
+      var _pts=[_v15x,_v15y,_v35x,_v35y,_v37x,_v37y,_v36x,_v36y,_v34x,_v34y,_v32x,_v32y,_v31x,_v31y,_v33x,_v33y,_v30x,_v30y,_v29x,_v29y,_v14x,_v14y];
+      var _ptStr=''; for(var _i=0;_i<_pts.length;_i+=2)_ptStr+=_pts[_i]+','+_pts[_i+1]+' ';
+      s+='<polygon points="'+_ptStr.trim()+'" fill="'+fCierre+'"/>';
+      var _tdx=xT-xF;
+      var _tptStr=''; for(var _i=0;_i<_pts.length;_i+=2)_tptStr+=(_pts[_i]+_tdx)+','+_pts[_i+1]+' ';
+      s+='<polygon points="'+_tptStr.trim()+'" fill="'+fCierre+'"/>';
+      var _v38x=xD+_s20*0.07*A, _v38y=_caY1;
+      var _v39x=_v38x,           _v39y=_v38y+0.53*A;
+      var _v40t=_caY1-yPB+0.53*A, _v40x=xDR-_v40t, _v40y=_v39y;
+      var _v13x=xDR, _v13y=yPB;
+      var _dpts=[xD,yPB, _v38x,_v38y, _v39x,_v39y, _v40x,_v40y, _v13x,_v13y];
+      var _dptStr=''; for(var _i=0;_i<_dpts.length;_i+=2)_dptStr+=_dpts[_i]+','+_dpts[_i+1]+' ';
+      s+='<polygon points="'+_dptStr.trim()+'" fill="'+fTrap+'"/>';
+      var _v41x=xI+_s20*0.07*A, _v41y=_caY1;
+      var _v42x=_v41x,            _v42y=_v41y+0.53*A;
+      var _v43x=xF-_v40t,         _v43y=_v42y;
+      var _ipts=[xI,yPB, _v41x,_v41y, _v42x,_v42y, _v43x,_v43y, xF,yPB];
+      var _iptStr=''; for(var _i=0;_i<_ipts.length;_i+=2)_iptStr+=_ipts[_i]+','+_ipts[_i+1]+' ';
+      s+='<polygon points="'+_iptStr.trim()+'" fill="'+fTrap+'"/>';
+    }
+    if(bt!=='cierre-automatico'){
+      s+='<rect x="'+xF+'" y="'+yPB+'" width="'+L+'" height="'+A+'" fill="'+fTapa+'"/>';
+      if(R>0){
+        s+='<path d="M '+xF+' '+yBB+' L '+xD+' '+yBB+' L '+xD+' '+(yCB-R)+' A '+R+' '+R+' 0 0 1 '+(xD-R)+' '+yCB+' L '+(xF+R)+' '+yCB+' A '+R+' '+R+' 0 0 1 '+xF+' '+(yCB-R)+' Z" fill="'+fCierre+'"/>';
+      } else {
+        s+='<rect x="'+xF+'" y="'+yBB+'" width="'+L+'" height="'+(yCB-yBB)+'" fill="'+fCierre+'"/>';
+      }
+    }
+  }
+
+  // Flap configuration
+  var tlX,tlTip,tlEnd,tlTal,tlX2;
+  var trX,trTip,trEnd,trTal;
+  var blX,blTip,blEnd,blTal,blX2;
+  var brX,brTip,brEnd,brTal;
+  tlX=xI; tlTip=xI+g.TI; tlEnd=xI+A-g.TI; tlTal=xI; tlX2=xI+A;
+  trX=xD; trTip=xD+g.TI; trEnd=xD+A-g.TI; trTal=xDR;
+  blX=xI; blTip=xI+g.TI; blEnd=xI+A-g.TI; blTal=xI; blX2=xI+A;
+  brX=xD; brTip=xD+g.TI; brEnd=xD+A-g.TI; brTal=xDR;
+  function trap(pts){return'<polygon points="'+pts+'" fill="'+fTrap+'"/>';}
+  if(bt==='doble-solapa-alt'){
+    s+=trap(tlX+','+yPT+' '+tlTip+','+(yPT-TH)+' '+tlEnd+','+(yPT-TH)+' '+tlX2+','+(yPT-g.TAL)+' '+tlX2+','+yPT);
+    s+=trap(trX+','+yPT+' '+trX+','+(yPT-g.TAL)+' '+trTip+','+(yPT-TH)+' '+trEnd+','+(yPT-TH)+' '+trTal+','+yPT);
+  } else {
+    s+=trap(tlX+','+yPT+' '+tlTal+','+(yPT-g.TAL)+' '+tlTip+','+(yPT-TH)+' '+tlEnd+','+(yPT-TH)+' '+tlX2+','+yPT);
+    s+=trap(trX+','+yPT+' '+trTip+','+(yPT-TH)+' '+trEnd+','+(yPT-TH)+' '+trTal+','+(yPT-g.TAL)+' '+trTal+','+yPT);
+  }
+  if(bt!=='cierre-automatico'){
+    s+=trap(blX+','+yPB+' '+blX2+','+yPB+' '+blEnd+','+(yPB+TH)+' '+blTip+','+(yPB+TH)+' '+blTal+','+(yPB+g.TAL));
+    s+=trap(brX+','+yPB+' '+brTal+','+yPB+' '+brTal+','+(yPB+g.TAL)+' '+brEnd+','+(yPB+TH)+' '+brTip+','+(yPB+TH));
+  }
+  s+='<polygon points="'+xPL+','+(yPT+PW)+' '+xT+','+yPT+' '+xT+','+yPB+' '+xPL+','+(yPB-PW)+'" fill="'+fPega+'"/>';
+
+  // Fold lines
+  s+='<g fill="none" stroke="'+S.foldColor+'" stroke-width="'+swF+'" stroke-dasharray="'+fDash+'" stroke-linecap="butt">';
+  if(bt==='doble-solapa-alt'){
+    s+='<line x1="'+xT+'" y1="'+yPT+'" x2="'+xI+'" y2="'+yPT+'"/>';
+  }
+  s+='<line x1="'+xI+'" y1="'+yPT+'" x2="'+xF+'" y2="'+yPT+'"/>';
+  if(bt==='doble-solapa-alt'){
+    var _fg1x=xF+L/2-S.lockW/2, _fg2x=xF+L/2+S.lockW/2;
+    s+='<line x1="'+xF+'" y1="'+yPT+'" x2="'+_fg1x+'" y2="'+yPT+'"/>';
+    s+='<line x1="'+_fg2x+'" y1="'+yPT+'" x2="'+xD+'" y2="'+yPT+'"/>';
+  }else{
+    s+='<line x1="'+xF+'" y1="'+yPT+'" x2="'+xD+'" y2="'+yPT+'"/>';
+  }
+  s+='<line x1="'+xD+'" y1="'+yPT+'" x2="'+xDR+'" y2="'+yPT+'"/>';
+  s+='<line x1="'+xI+'" y1="'+yPB+'" x2="'+xF+'" y2="'+yPB+'"/>';
+  s+='<line x1="'+xF+'" y1="'+yPB+'" x2="'+xD+'" y2="'+yPB+'"/>';
+  s+='<line x1="'+xD+'" y1="'+yPB+'" x2="'+xDR+'" y2="'+yPB+'"/>';
+  s+='<line x1="'+xT+'" y1="'+yPT+'" x2="'+xT+'" y2="'+yPB+'"/>';
+  s+='<line x1="'+xI+'" y1="'+yPT+'" x2="'+xI+'" y2="'+yPB+'"/>';
+  s+='<line x1="'+xF+'" y1="'+yPT+'" x2="'+xF+'" y2="'+yPB+'"/>';
+  s+='<line x1="'+xD+'" y1="'+yPT+'" x2="'+xD+'" y2="'+yPB+'"/>';
+  if(bt==='doble-solapa-alt'){
+    (function(){var _xa=xT+TAL+LK,_xb=xI-TAL-LK,_cx=xT+L/2,_y=yTT+1;
+    var _v65x=_cx-S.lockW/2-1,_v66x=_cx+S.lockW/2+1;
+    s+='<line x1="'+_xa+'" y1="'+_y+'" x2="'+_v65x+'" y2="'+_y+'"/>';
+    s+='<line x1="'+_v66x+'" y1="'+_y+'" x2="'+_xb+'" y2="'+_y+'"/>';
+    }());
+    s+='<line x1="'+xI+'" y1="'+yTT+'" x2="'+xI+'" y2="'+yPT+'"/>';
+    (function(){var _xa=xF+TAL+LK,_xb=xD-TAL-LK,_cx=xF+L/2,_y=yBB-1;
+    var _v71x=_cx-S.lockW/2-1,_v72x=_cx+S.lockW/2+1;
+    s+='<line x1="'+_xa+'" y1="'+_y+'" x2="'+_v71x+'" y2="'+_y+'"/>';
+    s+='<line x1="'+_v72x+'" y1="'+_y+'" x2="'+_xb+'" y2="'+_y+'"/>';
+    }());
+    s+='<line x1="'+xD+'" y1="'+yPB+'" x2="'+xD+'" y2="'+yBB+'"/>';
+  } else {
+    (function(){var _xa=xF+TAL+LK,_xb=xD-TAL-LK,_cx=xF+L/2,_y=yTT+1;
+    var _v65x=_cx-S.lockW/2-1, _v66x=_cx+S.lockW/2+1;
+    s+='<line x1="'+_xa+'" y1="'+_y+'" x2="'+_v65x+'" y2="'+_y+'"/>';
+    s+='<line x1="'+_v66x+'" y1="'+_y+'" x2="'+_xb+'" y2="'+_y+'"/>';
+    }());
+    s+='<line x1="'+xD+'" y1="'+yTT+'" x2="'+xD+'" y2="'+yPT+'"/>';
+    if(bt!=='cierre-automatico'){
+      if(bt==='doble-solapa'){
+        (function(){var _xa=xF+TAL+LK,_xb=xD-TAL-LK,_cx=xF+L/2,_y=yBB-1;
+        var _v71x=_cx-S.lockW/2-1, _v72x=_cx+S.lockW/2+1;
+        s+='<line x1="'+_xa+'" y1="'+_y+'" x2="'+_v71x+'" y2="'+_y+'"/>';
+        s+='<line x1="'+_v72x+'" y1="'+_y+'" x2="'+_xb+'" y2="'+_y+'"/>';
+        }());
+      }else{
+        s+='<line x1="'+(xF+TAL+LK)+'" y1="'+(yBB-1)+'" x2="'+(xD-TAL-LK)+'" y2="'+(yBB-1)+'"/>';
+      }
+      s+='<line x1="'+xD+'" y1="'+yPB+'" x2="'+xD+'" y2="'+yBB+'"/>';
+    }
+  }
+  s+='</g>';
+
+  // Cut contour
+  s+='<path d="'+contourPathCandado(g,bt)+'" fill="none" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>';
+
+  // L-shaped locking tab cuts
+  if(bt==='doble-solapa-alt'){
+    s+='<path d="M '+xT+' '+yTT+' L '+(xT+TAL+LK)+' '+yTT+' L '+(xT+TAL+LK)+' '+(yTT+2)+'" fill="none" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>';
+    s+='<path d="M '+xI+' '+yTT+' L '+(xI-TAL-LK)+' '+yTT+' L '+(xI-TAL-LK)+' '+(yTT+2)+'" fill="none" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>';
+    s+='<path d="M '+xD+' '+yBB+' L '+(xD-TAL-LK)+' '+yBB+' L '+(xD-TAL-LK)+' '+(yBB-2)+'" fill="none" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>';
+    s+='<path d="M '+xF+' '+yBB+' L '+(xF+TAL+LK)+' '+yBB+' L '+(xF+TAL+LK)+' '+(yBB-2)+'" fill="none" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>';
+  } else {
+    s+='<path d="M '+xD+' '+yTT+' L '+(xD-TAL-LK)+' '+yTT+' L '+(xD-TAL-LK)+' '+(yTT+2)+'" fill="none" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>';
+    s+='<path d="M '+xF+' '+yTT+' L '+(xF+TAL+LK)+' '+yTT+' L '+(xF+TAL+LK)+' '+(yTT+2)+'" fill="none" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>';
+    if(bt!=='cierre-automatico'){
+      s+='<path d="M '+xD+' '+yBB+' L '+(xD-TAL-LK)+' '+yBB+' L '+(xD-TAL-LK)+' '+(yBB-2)+'" fill="none" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>';
+      s+='<path d="M '+xF+' '+yBB+' L '+(xF+TAL+LK)+' '+yBB+' L '+(xF+TAL+LK)+' '+(yBB-2)+'" fill="none" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>';
+    }
+  }
+
+  // ── Línea de corte desde v65 hacia la derecha (doble-solapa) ──
+  if(bt==='doble-solapa'){
+    var _v65x=xF+L/2-S.lockW/2-1;
+    var _v66x=xF+L/2+S.lockW/2+1;
+    var _sq2=Math.sqrt(2);
+    s+='<line x1="'+_v65x+'" y1="'+(yTT+1)+'" x2="'+(_v65x+S.lockA+1)+'" y2="'+(yTT+1)+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // v65 → derecha (lockA+1)
+    s+='<line x1="'+_v66x+'" y1="'+(yTT+1)+'" x2="'+(_v66x-S.lockA-1)+'" y2="'+(yTT+1)+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // v66 → izquierda (lockA+1)
+    var _v67x=_v65x+S.lockA+1, _v68x=_v66x-S.lockA-1, _vTTy=yTT+1;
+    s+='<line x1="'+_v67x+'" y1="'+_vTTy+'" x2="'+(_v67x+_sq2)+'" y2="'+(_vTTy-_sq2)+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // v67 → 45° arriba-derecha 2mm
+    s+='<line x1="'+_v68x+'" y1="'+_vTTy+'" x2="'+(_v68x-_sq2)+'" y2="'+(_vTTy-_sq2)+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // v68 → 45° arriba-izquierda 2mm
+    // v69 → v70: línea horizontal, misma longitud que v48→v50 = lockW - 2*lockA - 2√2
+    var _v69x=_v67x+_sq2, _v70x=_v68x-_sq2, _v6970y=_vTTy-_sq2;
+    s+='<line x1="'+_v69x+'" y1="'+_v6970y+'" x2="'+_v70x+'" y2="'+_v6970y+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // v69→v70
+
+    // ── Espejo inferior (yBB-1): v71-v76 ──
+    var _v71x=xF+L/2-S.lockW/2-1, _v72x=xF+L/2+S.lockW/2+1, _vBBy=yBB-1;
+    s+='<line x1="'+_v71x+'" y1="'+_vBBy+'" x2="'+(_v71x+S.lockA+1)+'" y2="'+_vBBy+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // v71 → derecha
+    s+='<line x1="'+_v72x+'" y1="'+_vBBy+'" x2="'+(_v72x-S.lockA-1)+'" y2="'+_vBBy+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // v72 → izquierda
+    var _v73x=_v71x+S.lockA+1, _v74x=_v72x-S.lockA-1;
+    s+='<line x1="'+_v73x+'" y1="'+_vBBy+'" x2="'+(_v73x+_sq2)+'" y2="'+(_vBBy+_sq2)+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // v73 → 45° abajo-derecha
+    s+='<line x1="'+_v74x+'" y1="'+_vBBy+'" x2="'+(_v74x-_sq2)+'" y2="'+(_vBBy+_sq2)+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // v74 → 45° abajo-izquierda
+    var _v75x=_v73x+_sq2, _v76x=_v74x-_sq2, _v7576y=_vBBy+_sq2;
+    s+='<line x1="'+_v75x+'" y1="'+_v7576y+'" x2="'+_v76x+'" y2="'+_v7576y+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // v75→v76
+  }
+
+  // ── Cortes cierre superior (yTT+1) para cierre-automatico: centrado en xF+L/2 ──
+  if(bt==='cierre-automatico'){
+    var _csq2=Math.sqrt(2);
+    var _c54x=xF+L/2-S.lockW/2-1, _c55x=xF+L/2+S.lockW/2+1, _cTy2=yTT+1;
+    s+='<line x1="'+_c54x+'" y1="'+_cTy2+'" x2="'+(_c54x+S.lockA+1)+'" y2="'+_cTy2+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // c54→c56
+    s+='<line x1="'+_c55x+'" y1="'+_cTy2+'" x2="'+(_c55x-S.lockA-1)+'" y2="'+_cTy2+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // c55→c57
+    var _c56x=_c54x+S.lockA+1, _c57x=_c55x-S.lockA-1;
+    s+='<line x1="'+_c56x+'" y1="'+_cTy2+'" x2="'+(_c56x+_csq2)+'" y2="'+(_cTy2-_csq2)+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // c56→c58 45° arriba
+    s+='<line x1="'+_c57x+'" y1="'+_cTy2+'" x2="'+(_c57x-_csq2)+'" y2="'+(_cTy2-_csq2)+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // c57→c59 45° arriba
+    var _c58x=_c56x+_csq2, _c59x=_c57x-_csq2, _c5859y=_cTy2-_csq2;
+    s+='<line x1="'+_c58x+'" y1="'+_c5859y+'" x2="'+_c59x+'" y2="'+_c5859y+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // c58→c59
+  }
+
+  // ── Candado: ranura en borde superior TRASERO (doble-solapa + cierre-automatico) ──
+  if(bt==='doble-solapa'||bt==='cierre-automatico'){
+    var _sq2=Math.sqrt(2);
+    var _v37x=xT+L/2-S.lockW/2, _v38x=xT+L/2+S.lockW/2;
+    var _v47x=_v37x+S.lockA, _v48x=_v47x+_sq2, _v48y=yPT+_sq2;
+    var _v49x=_v38x-S.lockA, _v50x=_v49x-_sq2, _v50y=yPT+_sq2;
+    s+='<line x1="'+_v37x+'" y1="'+yPT+'" x2="'+_v47x+'" y2="'+yPT+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // v37→v47
+    s+='<line x1="'+_v47x+'" y1="'+yPT+'" x2="'+_v48x+'" y2="'+_v48y+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // v47→v48 45°
+    s+='<line x1="'+_v38x+'" y1="'+yPT+'" x2="'+_v49x+'" y2="'+yPT+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // v38→v49
+    s+='<line x1="'+_v49x+'" y1="'+yPT+'" x2="'+_v50x+'" y2="'+_v50y+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // v49→v50 45°
+    s+='<line x1="'+_v48x+'" y1="'+_v48y+'" x2="'+_v50x+'" y2="'+_v50y+'" stroke="'+S.foldColor+'" stroke-width="'+swF+'" stroke-linecap="round" stroke-dasharray="'+fDash+'"/>'; // v48→v50 doblez
+    var _lh=S.lockH/2;
+    var _ang=S.lockAngle*Math.PI/180;
+    var _adx=_lh*Math.tan(_ang);
+    s+='<line x1="'+_v37x+'" y1="'+yPT+'" x2="'+_v37x+'" y2="'+(yPT+_lh)+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // v37→v51 abajo (vertical)
+    s+='<line x1="'+_v38x+'" y1="'+yPT+'" x2="'+_v38x+'" y2="'+(yPT+_lh)+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // v38→v53 abajo (vertical)
+    s+='<line x1="'+_v37x+'" y1="'+(yPT+_lh)+'" x2="'+_v38x+'" y2="'+(yPT+_lh)+'" stroke="'+S.foldColor+'" stroke-width="'+swF+'" stroke-linecap="round" stroke-dasharray="'+fDash+'"/>'; // v51→v53 doblez
+    // Contorno superior: v37 → v52 → v54 → v38 (esquinas redondeadas si lockR>0)
+    var _sinA=Math.sin(_ang), _cosA=Math.cos(_ang);
+    var _v52x=_v37x+_adx, _v52y=yPT-_lh, _v54x=_v38x-_adx, _v54y=yPT-_lh;
+    var _lr=S.lockR; if(_lr<0)_lr=0;
+    // Distancia tangente correcta: d = r*(1-sinA)/cosA
+    // Esto garantiza tangencia real con la línea inclinada sin importar el ángulo
+    var _td=(_cosA>0.001&&_lr>0)?_lr*(1-_sinA)/_cosA:0;
+    // Limitar para no superar la longitud disponible
+    var _maxTd=Math.min(_lh*0.85,(_v54x-_v52x)*0.45);
+    if(_td>_maxTd){_td=_maxTd;_lr=(_cosA>0.001&&(1-_sinA)>0.001)?_td*_cosA/(1-_sinA):0;}
+    var _tp='M '+_v37x+' '+yPT;
+    if(_lr>0&&_td>0){
+      // Punto tangente en línea inclinada (v37→v52): retrocede d desde v52 a lo largo del segmento
+      _tp+=' L '+(_v52x-_td*_sinA)+' '+(_v52y+_td*_cosA);
+      // Arco en v52 (sweep=1 = cóncavo hacia interior del candado)
+      _tp+=' A '+_lr+' '+_lr+' 0 0 1 '+(_v52x+_td)+' '+_v52y;
+      // Línea horizontal superior, punto tangente en v54: d desde v54 hacia la izquierda
+      _tp+=' L '+(_v54x-_td)+' '+_v54y;
+      // Arco en v54 (simétrico)
+      _tp+=' A '+_lr+' '+_lr+' 0 0 1 '+(_v54x+_td*_sinA)+' '+(_v54y+_td*_cosA);
+      // Línea inclinada hasta v38
+      _tp+=' L '+_v38x+' '+yPT;
+    }else{
+      _tp+=' L '+_v52x+' '+_v52y+' L '+_v54x+' '+_v54y+' L '+_v38x+' '+yPT;
+    }
+    s+='<path d="'+_tp+'" fill="none" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>';
+
+    // ── Espejo inferior del candado (borde yPB, entre v33-v32) — solo doble-solapa ──
+    if(bt==='doble-solapa'){
+    var _bsq2=Math.sqrt(2);
+    var _bv37x=xT+L/2-S.lockW/2, _bv38x=xT+L/2+S.lockW/2;
+    var _bv47x=_bv37x+S.lockA, _bv48x=_bv47x+_bsq2, _bv48y=yPB-_bsq2;
+    var _bv49x=_bv38x-S.lockA, _bv50x=_bv49x-_bsq2, _bv50y=yPB-_bsq2;
+    s+='<line x1="'+_bv37x+'" y1="'+yPB+'" x2="'+_bv47x+'" y2="'+yPB+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // bv37→bv47 anclaje
+    s+='<line x1="'+_bv47x+'" y1="'+yPB+'" x2="'+_bv48x+'" y2="'+_bv48y+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // bv47→bv48 45° arriba
+    s+='<line x1="'+_bv38x+'" y1="'+yPB+'" x2="'+_bv49x+'" y2="'+yPB+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // bv38→bv49 anclaje
+    s+='<line x1="'+_bv49x+'" y1="'+yPB+'" x2="'+_bv50x+'" y2="'+_bv50y+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // bv49→bv50 45° arriba
+    s+='<line x1="'+_bv48x+'" y1="'+_bv48y+'" x2="'+_bv50x+'" y2="'+_bv50y+'" stroke="'+S.foldColor+'" stroke-width="'+swF+'" stroke-linecap="round" stroke-dasharray="'+fDash+'"/>'; // bv48→bv50 doblez
+    var _blh=S.lockH/2, _bang=S.lockAngle*Math.PI/180, _badx=_blh*Math.tan(_bang);
+    s+='<line x1="'+_bv37x+'" y1="'+yPB+'" x2="'+_bv37x+'" y2="'+(yPB-_blh)+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // bv37→bv51 arriba
+    s+='<line x1="'+_bv38x+'" y1="'+yPB+'" x2="'+_bv38x+'" y2="'+(yPB-_blh)+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // bv38→bv53 arriba
+    s+='<line x1="'+_bv37x+'" y1="'+(yPB-_blh)+'" x2="'+_bv38x+'" y2="'+(yPB-_blh)+'" stroke="'+S.foldColor+'" stroke-width="'+swF+'" stroke-linecap="round" stroke-dasharray="'+fDash+'"/>'; // bv51→bv53 doblez
+    // Ranura inferior: bv37 → bv52 → bv54 → bv38 (abre hacia abajo, con redondeo)
+    var _bsinA=Math.sin(_bang), _bcosA=Math.cos(_bang);
+    var _bv52x=_bv37x+_badx, _bv52y=yPB+_blh;
+    var _bv54x=_bv38x-_badx, _bv54y=yPB+_blh;
+    var _blr=S.lockR; if(_blr<0)_blr=0;
+    var _btd=(_bcosA>0.001&&_blr>0)?_blr*(1-_bsinA)/_bcosA:0;
+    var _bmaxTd=Math.min(_blh*0.85,(_bv54x-_bv52x)*0.45);
+    if(_btd>_bmaxTd){_btd=_bmaxTd;_blr=(_bcosA>0.001&&(1-_bsinA)>0.001)?_btd*_bcosA/(1-_bsinA):0;}
+    var _btp='M '+_bv37x+' '+yPB;
+    if(_blr>0&&_btd>0){
+      _btp+=' L '+(_bv52x-_btd*_bsinA)+' '+(_bv52y-_btd*_bcosA);
+      _btp+=' A '+_blr+' '+_blr+' 0 0 0 '+(_bv52x+_btd)+' '+_bv52y; // sweep=0 (CCW) en bv52
+      _btp+=' L '+(_bv54x-_btd)+' '+_bv54y;
+      _btp+=' A '+_blr+' '+_blr+' 0 0 0 '+(_bv54x+_btd*_bsinA)+' '+(_bv54y-_btd*_bcosA); // sweep=0 (CCW) en bv54
+      _btp+=' L '+_bv38x+' '+yPB;
+    }else{
+      _btp+=' L '+_bv52x+' '+_bv52y+' L '+_bv54x+' '+_bv54y+' L '+_bv38x+' '+yPB;
+    }
+    s+='<path d="'+_btp+'" fill="none" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>';
+    } // fin espejo inferior
+  }
+
+  // ── Candado doble-solapa-alt: top FRONTAL (v12→v13) + espejo TRASERO (v38→v37) ──
+  if(bt==='doble-solapa-alt'){
+    var _sq2=Math.sqrt(2);
+    var _lh=S.lockH/2, _ang=S.lockAngle*Math.PI/180, _adx=_lh*Math.tan(_ang);
+    var _sinA=Math.sin(_ang), _cosA=Math.cos(_ang);
+    // ── Superior: centrado en xF+L/2, en yPT ──
+    var _tv37x=xF+L/2-S.lockW/2, _tv38x=xF+L/2+S.lockW/2;
+    var _tv47x=_tv37x+S.lockA, _tv48x=_tv47x+_sq2, _tv48y=yPT+_sq2;
+    var _tv49x=_tv38x-S.lockA, _tv50x=_tv49x-_sq2, _tv50y=yPT+_sq2;
+    s+='<line x1="'+_tv37x+'" y1="'+yPT+'" x2="'+_tv47x+'" y2="'+yPT+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // tv37→tv47 anclaje
+    s+='<line x1="'+_tv47x+'" y1="'+yPT+'" x2="'+_tv48x+'" y2="'+_tv48y+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // tv47→tv48 45°
+    s+='<line x1="'+_tv38x+'" y1="'+yPT+'" x2="'+_tv49x+'" y2="'+yPT+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // tv38→tv49 anclaje
+    s+='<line x1="'+_tv49x+'" y1="'+yPT+'" x2="'+_tv50x+'" y2="'+_tv50y+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // tv49→tv50 45°
+    s+='<line x1="'+_tv48x+'" y1="'+_tv48y+'" x2="'+_tv50x+'" y2="'+_tv50y+'" stroke="'+S.foldColor+'" stroke-width="'+swF+'" stroke-linecap="round" stroke-dasharray="'+fDash+'"/>'; // tv48→tv50 doblez
+    s+='<line x1="'+_tv37x+'" y1="'+yPT+'" x2="'+_tv37x+'" y2="'+(yPT+_lh)+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // tv37→tv51 abajo
+    s+='<line x1="'+_tv38x+'" y1="'+yPT+'" x2="'+_tv38x+'" y2="'+(yPT+_lh)+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // tv38→tv53 abajo
+    s+='<line x1="'+_tv37x+'" y1="'+(yPT+_lh)+'" x2="'+_tv38x+'" y2="'+(yPT+_lh)+'" stroke="'+S.foldColor+'" stroke-width="'+swF+'" stroke-linecap="round" stroke-dasharray="'+fDash+'"/>'; // tv51→tv53 doblez
+    var _tv52x=_tv37x+_adx, _tv52y=yPT-_lh, _tv54x=_tv38x-_adx, _tv54y=yPT-_lh;
+    var _tlr=S.lockR; if(_tlr<0)_tlr=0;
+    var _ttd=(_cosA>0.001&&_tlr>0)?_tlr*(1-_sinA)/_cosA:0;
+    var _tmaxTd=Math.min(_lh*0.85,(_tv54x-_tv52x)*0.45);
+    if(_ttd>_tmaxTd){_ttd=_tmaxTd;_tlr=(_cosA>0.001&&(1-_sinA)>0.001)?_ttd*_cosA/(1-_sinA):0;}
+    var _ttp='M '+_tv37x+' '+yPT;
+    if(_tlr>0&&_ttd>0){
+      _ttp+=' L '+(_tv52x-_ttd*_sinA)+' '+(_tv52y+_ttd*_cosA);
+      _ttp+=' A '+_tlr+' '+_tlr+' 0 0 1 '+(_tv52x+_ttd)+' '+_tv52y;
+      _ttp+=' L '+(_tv54x-_ttd)+' '+_tv54y;
+      _ttp+=' A '+_tlr+' '+_tlr+' 0 0 1 '+(_tv54x+_ttd*_sinA)+' '+(_tv54y+_ttd*_cosA);
+      _ttp+=' L '+_tv38x+' '+yPT;
+    }else{
+      _ttp+=' L '+_tv52x+' '+_tv52y+' L '+_tv54x+' '+_tv54y+' L '+_tv38x+' '+yPT;
+    }
+    s+='<path d="'+_ttp+'" fill="none" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>';
+    // ── Espejo inferior: centrado en xT+L/2, en yPB (abre hacia abajo) ──
+    var _bv37x=xT+L/2-S.lockW/2, _bv38x=xT+L/2+S.lockW/2;
+    var _bv47x=_bv37x+S.lockA, _bv48x=_bv47x+_sq2, _bv48y=yPB-_sq2;
+    var _bv49x=_bv38x-S.lockA, _bv50x=_bv49x-_sq2, _bv50y=yPB-_sq2;
+    s+='<line x1="'+_bv37x+'" y1="'+yPB+'" x2="'+_bv47x+'" y2="'+yPB+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // bv37→bv47 anclaje
+    s+='<line x1="'+_bv47x+'" y1="'+yPB+'" x2="'+_bv48x+'" y2="'+_bv48y+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // bv47→bv48 45° arriba
+    s+='<line x1="'+_bv38x+'" y1="'+yPB+'" x2="'+_bv49x+'" y2="'+yPB+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // bv38→bv49 anclaje
+    s+='<line x1="'+_bv49x+'" y1="'+yPB+'" x2="'+_bv50x+'" y2="'+_bv50y+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // bv49→bv50 45° arriba
+    s+='<line x1="'+_bv48x+'" y1="'+_bv48y+'" x2="'+_bv50x+'" y2="'+_bv50y+'" stroke="'+S.foldColor+'" stroke-width="'+swF+'" stroke-linecap="round" stroke-dasharray="'+fDash+'"/>'; // bv48→bv50 doblez
+    var _blh=_lh, _bang=_ang, _badx=_adx;
+    s+='<line x1="'+_bv37x+'" y1="'+yPB+'" x2="'+_bv37x+'" y2="'+(yPB-_blh)+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // bv37→bv51 arriba
+    s+='<line x1="'+_bv38x+'" y1="'+yPB+'" x2="'+_bv38x+'" y2="'+(yPB-_blh)+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // bv38→bv53 arriba
+    s+='<line x1="'+_bv37x+'" y1="'+(yPB-_blh)+'" x2="'+_bv38x+'" y2="'+(yPB-_blh)+'" stroke="'+S.foldColor+'" stroke-width="'+swF+'" stroke-linecap="round" stroke-dasharray="'+fDash+'"/>'; // bv51→bv53 doblez
+    var _bsinA=_sinA, _bcosA=_cosA;
+    var _bv52x=_bv37x+_badx, _bv52y=yPB+_blh, _bv54x=_bv38x-_badx, _bv54y=yPB+_blh;
+    var _blr=S.lockR; if(_blr<0)_blr=0;
+    var _btd=(_bcosA>0.001&&_blr>0)?_blr*(1-_bsinA)/_bcosA:0;
+    var _bmaxTd=Math.min(_blh*0.85,(_bv54x-_bv52x)*0.45);
+    if(_btd>_bmaxTd){_btd=_bmaxTd;_blr=(_bcosA>0.001&&(1-_bsinA)>0.001)?_btd*_bcosA/(1-_bsinA):0;}
+    var _btp='M '+_bv37x+' '+yPB;
+    if(_blr>0&&_btd>0){
+      _btp+=' L '+(_bv52x-_btd*_bsinA)+' '+(_bv52y-_btd*_bcosA);
+      _btp+=' A '+_blr+' '+_blr+' 0 0 0 '+(_bv52x+_btd)+' '+_bv52y;
+      _btp+=' L '+(_bv54x-_btd)+' '+_bv54y;
+      _btp+=' A '+_blr+' '+_blr+' 0 0 0 '+(_bv54x+_btd*_bsinA)+' '+(_bv54y-_btd*_bcosA);
+      _btp+=' L '+_bv38x+' '+yPB;
+    }else{
+      _btp+=' L '+_bv52x+' '+_bv52y+' L '+_bv54x+' '+_bv54y+' L '+_bv38x+' '+yPB;
+    }
+    s+='<path d="'+_btp+'" fill="none" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>';
+
+    // ── Cortes cierre superior (yTT+1): centrado en xT+L/2 — diagonales hacia ARRIBA ──
+    var _sq2a=Math.sqrt(2);
+    var _c65x=xT+L/2-S.lockW/2-1, _c66x=xT+L/2+S.lockW/2+1, _cTy=yTT+1;
+    s+='<line x1="'+_c65x+'" y1="'+_cTy+'" x2="'+(_c65x+S.lockA+1)+'" y2="'+_cTy+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // c65→c67
+    s+='<line x1="'+_c66x+'" y1="'+_cTy+'" x2="'+(_c66x-S.lockA-1)+'" y2="'+_cTy+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // c66→c68
+    var _c67x=_c65x+S.lockA+1, _c68x=_c66x-S.lockA-1;
+    s+='<line x1="'+_c67x+'" y1="'+_cTy+'" x2="'+(_c67x+_sq2a)+'" y2="'+(_cTy-_sq2a)+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // c67→c69 45° arriba
+    s+='<line x1="'+_c68x+'" y1="'+_cTy+'" x2="'+(_c68x-_sq2a)+'" y2="'+(_cTy-_sq2a)+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // c68→c70 45° arriba
+    var _c69x=_c67x+_sq2a, _c70x=_c68x-_sq2a, _c6970y=_cTy-_sq2a;
+    s+='<line x1="'+_c69x+'" y1="'+_c6970y+'" x2="'+_c70x+'" y2="'+_c6970y+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // c69→c70
+
+    // ── Cortes cierre inferior (yBB-1): centrado en xF+L/2 — diagonales hacia ABAJO ──
+    var _c71x=xF+L/2-S.lockW/2-1, _c72x=xF+L/2+S.lockW/2+1, _cBy=yBB-1;
+    s+='<line x1="'+_c71x+'" y1="'+_cBy+'" x2="'+(_c71x+S.lockA+1)+'" y2="'+_cBy+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // c71→c73
+    s+='<line x1="'+_c72x+'" y1="'+_cBy+'" x2="'+(_c72x-S.lockA-1)+'" y2="'+_cBy+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // c72→c74
+    var _c73x=_c71x+S.lockA+1, _c74x=_c72x-S.lockA-1;
+    s+='<line x1="'+_c73x+'" y1="'+_cBy+'" x2="'+(_c73x+_sq2a)+'" y2="'+(_cBy+_sq2a)+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // c73→c75 45° abajo
+    s+='<line x1="'+_c74x+'" y1="'+_cBy+'" x2="'+(_c74x-_sq2a)+'" y2="'+(_cBy+_sq2a)+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // c74→c76 45° abajo
+    var _c75x=_c73x+_sq2a, _c76x=_c74x-_sq2a, _c7576y=_cBy+_sq2a;
+    s+='<line x1="'+_c75x+'" y1="'+_c7576y+'" x2="'+_c76x+'" y2="'+_c7576y+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>'; // c75→c76
+  }
+
+  // ── Cierre automático: mecanismo de cierre ──
+  if(bt==='cierre-automatico'){
+    var sin20=Math.sin(20*Math.PI/180),cos20=Math.cos(20*Math.PI/180);
+    var caX=xD-sin20*0.07*A, caY1=yPB+cos20*0.07*A, caY2=caY1+0.63*A;
+    s+='<line x1="'+xD+'" y1="'+yPB+'" x2="'+caX+'" y2="'+caY1+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>';
+    s+='<line x1="'+caX+'" y1="'+caY1+'" x2="'+caX+'" y2="'+caY2+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>';
+    var ca31x=xD-A/2, ca31y=yPB+A/2;
+    s+='<line x1="'+xD+'" y1="'+yPB+'" x2="'+ca31x+'" y2="'+ca31y+'" stroke="'+S.foldColor+'" stroke-width="'+swF+'" stroke-linecap="round" stroke-dasharray="'+fDash+'"/>';
+    var ca32x=xF+L/2, ca32y=yPB+A/2;
+    s+='<line x1="'+ca32x+'" y1="'+ca32y+'" x2="'+ca31x+'" y2="'+ca31y+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>';
+    var ca34x=ca32x, ca34y=ca32y+S.cunaH;
+    s+='<line x1="'+ca32x+'" y1="'+ca32y+'" x2="'+ca34x+'" y2="'+ca34y+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>';
+    var ca33t=caY2-ca31y, ca33x=ca31x+ca33t, ca33y=caY2;
+    s+='<line x1="'+ca31x+'" y1="'+ca31y+'" x2="'+ca33x+'" y2="'+ca33y+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>';
+    s+='<line x1="'+caX+'" y1="'+caY2+'" x2="'+ca33x+'" y2="'+ca33y+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>';
+    var v38x=xD+sin20*0.07*A, v38y=caY1;
+    s+='<line x1="'+xD+'" y1="'+yPB+'" x2="'+v38x+'" y2="'+v38y+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>';
+    var v39x=v38x, v39y=v38y+0.53*A;
+    s+='<line x1="'+v38x+'" y1="'+v38y+'" x2="'+v39x+'" y2="'+v39y+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>';
+    var v40t=caY1-yPB+0.53*A;
+    var v40x=xDR-v40t, v40y=v39y;
+    s+='<line x1="'+v39x+'" y1="'+v39y+'" x2="'+v40x+'" y2="'+v40y+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>';
+    s+='<line x1="'+xDR+'" y1="'+yPB+'" x2="'+v40x+'" y2="'+v40y+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>';
+    var v41x=xI+sin20*0.07*A, v41y=caY1;
+    s+='<line x1="'+xI+'" y1="'+yPB+'" x2="'+v41x+'" y2="'+v41y+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>';
+    var v42x=v41x, v42y=v41y+0.53*A;
+    s+='<line x1="'+v41x+'" y1="'+v41y+'" x2="'+v42x+'" y2="'+v42y+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>';
+    var v43x=xF-v40t, v43y=v42y;
+    s+='<line x1="'+v42x+'" y1="'+v42y+'" x2="'+v43x+'" y2="'+v43y+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>';
+    s+='<line x1="'+xF+'" y1="'+yPB+'" x2="'+v43x+'" y2="'+v43y+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>';
+    var v35x=xF+sin20*0.07*A, v35y=caY1;
+    s+='<line x1="'+xF+'" y1="'+yPB+'" x2="'+v35x+'" y2="'+v35y+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>';
+    var v37x=v35x, v37y=caY2;
+    s+='<line x1="'+v35x+'" y1="'+v35y+'" x2="'+v37x+'" y2="'+v37y+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>';
+    var v36y=caY2, v36x=ca34x-(v36y-ca34y);
+    s+='<line x1="'+ca34x+'" y1="'+ca34y+'" x2="'+v36x+'" y2="'+v36y+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>';
+    s+='<line x1="'+v36x+'" y1="'+v36y+'" x2="'+v37x+'" y2="'+v37y+'" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>';
+    var tdx=xT-xF;
+    function tl(x1,y1,x2,y2,sc,sw,da){return'<line x1="'+(x1+tdx)+'" y1="'+y1+'" x2="'+(x2+tdx)+'" y2="'+y2+'" stroke="'+sc+'" stroke-width="'+sw+'" stroke-linecap="round" stroke-dasharray="'+da+'"/>';}
+    s+=tl(xD,yPB,caX,caY1,S.cutColor,swC,cDash);
+    s+=tl(caX,caY1,caX,caY2,S.cutColor,swC,cDash);
+    s+=tl(xD,yPB,ca31x,ca31y,S.foldColor,swF,fDash);
+    s+=tl(ca32x,ca32y,ca31x,ca31y,S.cutColor,swC,cDash);
+    s+=tl(ca32x,ca32y,ca34x,ca34y,S.cutColor,swC,cDash);
+    s+=tl(ca31x,ca31y,ca33x,ca33y,S.cutColor,swC,cDash);
+    s+=tl(caX,caY2,ca33x,ca33y,S.cutColor,swC,cDash);
+    s+=tl(xF,yPB,v35x,v35y,S.cutColor,swC,cDash);
+    s+=tl(v35x,v35y,v37x,v37y,S.cutColor,swC,cDash);
+    s+=tl(ca34x,ca34y,v36x,v36y,S.cutColor,swC,cDash);
+    s+=tl(v36x,v36y,v37x,v37y,S.cutColor,swC,cDash);
+  }
+
+  // Panel labels
+  var showLabels=showUI&&S.showCotas;
+  if(showLabels){
+    s+='<g font-family="\'Geist Mono\',monospace" text-anchor="middle" letter-spacing="0.06em">';
+    function fsFor(pw,text,maxH){var cw=text.length*0.78;var fsW=pw*0.75/cw;var fsH=maxH*0.12;return Math.max(0.6,Math.min(fsW,fsH,4));}
+    function plbl(x,y1,y2,t1,t2,c1,c2,fs1,fs2){
+      s+='<text x="'+x+'" y="'+y1+'" font-size="'+fs1+'" fill="'+(c1||tc.labelMain)+'" text-anchor="middle">'+t1+'</text>';
+      s+='<text x="'+x+'" y="'+y2+'" font-size="'+fs2+'" fill="'+(c2||tc.labelSub)+'" text-anchor="middle">'+t2+'</text>';
+    }
+    var dimTxt=L+' x '+H+' mm';
+    var fs1m=fsFor(L,'TRASERO',H),fs2m=fsFor(L,dimTxt,H);
+    var fs1s=fsFor(A,'IZQUIERDO',H),fs2s=fsFor(A,A+' x '+H+' mm',H);
+    var fs1t=fsFor(L,'TAPA',A),fs2t=fsFor(L,L+' x '+A,A);
+    function fsCierre(txt){return Math.max(0.8,Math.min(L/(txt.length*0.62),CH*0.72,fs1m));}
+    function cierreLabel(cx,cy,txt){var fs=fsCierre(txt);s+='<text x="'+cx+'" y="'+(cy+fs*0.38)+'" font-size="'+fs+'" fill="'+tc.labelMain+'" text-anchor="middle" font-family="\'Geist Mono\',monospace">'+txt+'</text>';}
+    var my1=(yPT+yPB)/2-Math.max(fs1m,fs2m)*0.55,my2=(yPT+yPB)/2+Math.max(fs1m,fs2m)*0.55;
+    plbl(xT+L/2,my1,my2,'TRASERO',dimTxt,tc.labelMain,tc.labelSub,fs1m,fs2m);
+    plbl(xI+A/2,my1,my2,'IZQUIERDO',A+' x '+H+' mm',tc.labelMain,tc.labelSub,fs1s,fs2s);
+    plbl(xF+L/2,my1,my2,'FRONTAL',dimTxt,tc.labelMain,tc.labelSub,fs1m,fs2m);
+    plbl(xD+A/2,my1,my2,'DERECHO',A+' x '+H+' mm',tc.labelMain,tc.labelSub,fs1s,fs2s);
+    if(bt==='doble-solapa-alt'){
+      var ty1=yTT+A/2-fs1t*0.55,ty2=yTT+A/2+fs2t*0.55;
+      plbl(xT+L/2,ty1,ty2,'TAPA',L+' x '+A,tc.labelMain,tc.labelMain,fs1t,fs2t);
+      var by1=yPB+A/2-fs1t*0.55,by2=yPB+A/2+fs2t*0.55;
+      plbl(xF+L/2,by1,by2,'BASE',L+' x '+A,tc.labelMain,tc.labelMain,fs1t,fs2t);
+      cierreLabel(xT+L/2,yCT+CH/2,'CIERRE SUP');
+      cierreLabel(xF+L/2,yBB+CH/2,'CIERRE INF');
+    } else if(bt==='cierre-automatico'){
+      var ty1=yTT+A/2-fs1t*0.55,ty2=yTT+A/2+fs2t*0.55;
+      plbl(xF+L/2,ty1,ty2,'TAPA',L+' x '+A,tc.labelMain,tc.labelMain,fs1t,fs2t);
+      cierreLabel(xF+L/2,yCT+CH/2,'CIERRE SUP');
+    } else {
+      var ty1=yTT+A/2-fs1t*0.55,ty2=yTT+A/2+fs2t*0.55;
+      plbl(xF+L/2,ty1,ty2,'TAPA',L+' x '+A,tc.labelMain,tc.labelMain,fs1t,fs2t);
+      var by1=yPB+A/2-fs1t*0.55,by2=yPB+A/2+fs2t*0.55;
+      plbl(xF+L/2,by1,by2,'BASE',L+' x '+A,tc.labelMain,tc.labelMain,fs1t,fs2t);
+      cierreLabel(xF+L/2,yCT+CH/2,'CIERRE SUP');
+      cierreLabel(xF+L/2,yBB+CH/2,'CIERRE INF');
+    }
+    if(PW>=6){
+      var pgTxt='PEGA '+PW+'\xD7'+H;
+      var fsPg=Math.max(0.8,Math.min(H/(pgTxt.length*0.62),PW*0.72,fs1m));
+      var pgmx=(xPL+xT)/2,pgmy=(yPT+yPB)/2;
+      s+='<text x="'+pgmx+'" y="'+(pgmy+fsPg*0.38)+'" font-size="'+fsPg+'" fill="'+tc.errorColor+'" text-anchor="middle" font-family="\'Geist Mono\',monospace" transform="rotate(-90,'+pgmx+','+pgmy+')">'+pgTxt+'</text>';
+    }
+    s+='</g>';
+  }
+
+  // ── Overlay de vértices del candado (incrustado en SVG, no canvas) ──
+  if(showUI&&showVerts){
+    var _cv=vertsForCandado(g,bt);
+    var _vr=Math.min(vw,vh)*0.007;
+    s+='<g font-family="Geist Mono,monospace" font-weight="600" text-anchor="middle" dominant-baseline="middle">';
+    for(var _vi=0;_vi<_cv.length;_vi++){
+      var _vpx=_cv[_vi][0],_vpy=_cv[_vi][1];
+      s+='<circle cx="'+_vpx+'" cy="'+_vpy+'" r="'+_vr+'" fill="rgba(34,197,94,0.88)" stroke="none"/>';
+      s+='<text x="'+_vpx+'" y="'+(_vpy+_vr*0.08)+'" font-size="'+(_vr*1.05)+'" fill="#000">'+(_vi+1)+'</text>';
+    }
+    s+='</g>';
+  }
+
+  s+='</svg>';
+  return s;
+}
+
 /* ═══════════════════ SVG BUILDER ═══════════════════ */
 function buildSVG(g,id,opts){
+  if(S.candado) return buildSVGCandado(g,id,opts);
   var L=g.L,A=g.A,H=g.H,PW=g.PW,CH=g.CH,R=g.R,TH=g.TH,TAL=g.TAL,LK=g.LK;
   var xT=g.xT,xI=g.xI,xF=g.xF,xD=g.xD,xDR=g.xDR,xPL=g.xPL;
   var yPT=g.yPT,yPB=g.yPB,yTT=g.yTT,yCT=g.yCT,yBB=g.yBB,yCB=g.yCB;
@@ -838,6 +1779,17 @@ function buildSVG(g,id,opts){
     s+='</g>';
   }
 
+  if(showUI&&showVerts){
+    var _bv=vertsForBase(g,bt);
+    var _vr=Math.min(vw,vh)*0.007;
+    s+='<g font-family="Geist Mono,monospace" font-weight="600" text-anchor="middle" dominant-baseline="middle">';
+    for(var _vi=0;_vi<_bv.length;_vi++){
+      var _vpx=_bv[_vi][0],_vpy=_bv[_vi][1];
+      s+='<circle cx="'+_vpx+'" cy="'+_vpy+'" r="'+_vr+'" fill="rgba(239,68,68,0.85)" stroke="none"/>';
+      s+='<text x="'+_vpx+'" y="'+(_vpy+_vr*0.08)+'" font-size="'+(_vr*1.05)+'" fill="#fff">'+(_vi+1)+'</text>';
+    }
+    s+='</g>';
+  }
   s+='</svg>';
   return s;
 }
@@ -872,9 +1824,20 @@ function buildExportSVG(){
 
   // ── FOLD LINES ──
   s+='<g fill="none" stroke="'+S.foldColor+'" stroke-width="'+swF+'" stroke-dasharray="'+fDash+'" stroke-linecap="butt">\n';
-  if(bt==='doble-solapa-alt') s+='<line x1="'+xT+'" y1="'+yPT+'" x2="'+xI+'" y2="'+yPT+'"/>\n';
-  s+='<line x1="'+xI+'" y1="'+yPT+'" x2="'+xF+'" y2="'+yPT+'"/>\n';
-  s+='<line x1="'+xF+'" y1="'+yPT+'" x2="'+xD+'" y2="'+yPT+'"/>\n';
+  if(bt==='doble-solapa-alt'){
+    s+='<line x1="'+xT+'" y1="'+yPT+'" x2="'+xI+'" y2="'+yPT+'"/>\n';
+    s+='<line x1="'+xI+'" y1="'+yPT+'" x2="'+xF+'" y2="'+yPT+'"/>\n';
+    if(S.candado){
+      var _efg1=xF+L/2-S.lockW/2, _efg2=xF+L/2+S.lockW/2;
+      s+='<line x1="'+xF+'" y1="'+yPT+'" x2="'+_efg1+'" y2="'+yPT+'"/>\n';
+      s+='<line x1="'+_efg2+'" y1="'+yPT+'" x2="'+xD+'" y2="'+yPT+'"/>\n';
+    }else{
+      s+='<line x1="'+xF+'" y1="'+yPT+'" x2="'+xD+'" y2="'+yPT+'"/>\n';
+    }
+  }else{
+    s+='<line x1="'+xI+'" y1="'+yPT+'" x2="'+xF+'" y2="'+yPT+'"/>\n';
+    s+='<line x1="'+xF+'" y1="'+yPT+'" x2="'+xD+'" y2="'+yPT+'"/>\n';
+  }
   s+='<line x1="'+xD+'" y1="'+yPT+'" x2="'+xDR+'" y2="'+yPT+'"/>\n';
   s+='<line x1="'+xI+'" y1="'+yPB+'" x2="'+xF+'" y2="'+yPB+'"/>\n';
   s+='<line x1="'+xF+'" y1="'+yPB+'" x2="'+xD+'" y2="'+yPB+'"/>\n';
@@ -884,22 +1847,54 @@ function buildExportSVG(){
   s+='<line x1="'+xF+'" y1="'+yPT+'" x2="'+xF+'" y2="'+yPB+'"/>\n';
   s+='<line x1="'+xD+'" y1="'+yPT+'" x2="'+xD+'" y2="'+yPB+'"/>\n';
   if(bt==='doble-solapa-alt'){
-    s+='<line x1="'+(xT+TAL+LK)+'" y1="'+(yTT+1)+'" x2="'+(xI-TAL-LK)+'" y2="'+(yTT+1)+'"/>\n';
+    if(S.candado){
+      (function(){var _xa=xT+TAL+LK,_xb=xI-TAL-LK,_cx=xT+L/2,_y=yTT+1;
+      var _v65x=_cx-S.lockW/2-1,_v66x=_cx+S.lockW/2+1;
+      s+='<line x1="'+_xa+'" y1="'+_y+'" x2="'+_v65x+'" y2="'+_y+'"/>\n';
+      s+='<line x1="'+_v66x+'" y1="'+_y+'" x2="'+_xb+'" y2="'+_y+'"/>\n';
+      }());
+    }else{
+      s+='<line x1="'+(xT+TAL+LK)+'" y1="'+(yTT+1)+'" x2="'+(xI-TAL-LK)+'" y2="'+(yTT+1)+'"/>\n';
+    }
     s+='<line x1="'+xI+'" y1="'+yTT+'" x2="'+xI+'" y2="'+yPT+'"/>\n';
-    s+='<line x1="'+(xF+TAL+LK)+'" y1="'+(yBB-1)+'" x2="'+(xD-TAL-LK)+'" y2="'+(yBB-1)+'"/>\n';
+    if(S.candado){
+      (function(){var _xa=xF+TAL+LK,_xb=xD-TAL-LK,_cx=xF+L/2,_y=yBB-1;
+      var _v71x=_cx-S.lockW/2-1,_v72x=_cx+S.lockW/2+1;
+      s+='<line x1="'+_xa+'" y1="'+_y+'" x2="'+_v71x+'" y2="'+_y+'"/>\n';
+      s+='<line x1="'+_v72x+'" y1="'+_y+'" x2="'+_xb+'" y2="'+_y+'"/>\n';
+      }());
+    }else{
+      s+='<line x1="'+(xF+TAL+LK)+'" y1="'+(yBB-1)+'" x2="'+(xD-TAL-LK)+'" y2="'+(yBB-1)+'"/>\n';
+    }
     s+='<line x1="'+xD+'" y1="'+yPB+'" x2="'+xD+'" y2="'+yBB+'"/>\n';
-  } else {
-    s+='<line x1="'+(xF+TAL+LK)+'" y1="'+(yTT+1)+'" x2="'+(xD-TAL-LK)+'" y2="'+(yTT+1)+'"/>\n';
+  }else{
+    if(S.candado){
+      (function(){var _xa=xF+TAL+LK,_xb=xD-TAL-LK,_cx=xF+L/2,_y=yTT+1;
+      var _v65x=_cx-S.lockW/2-1,_v66x=_cx+S.lockW/2+1;
+      s+='<line x1="'+_xa+'" y1="'+_y+'" x2="'+_v65x+'" y2="'+_y+'"/>\n';
+      s+='<line x1="'+_v66x+'" y1="'+_y+'" x2="'+_xb+'" y2="'+_y+'"/>\n';
+      }());
+    }else{
+      s+='<line x1="'+(xF+TAL+LK)+'" y1="'+(yTT+1)+'" x2="'+(xD-TAL-LK)+'" y2="'+(yTT+1)+'"/>\n';
+    }
     s+='<line x1="'+xD+'" y1="'+yTT+'" x2="'+xD+'" y2="'+yPT+'"/>\n';
     if(bt!=='cierre-automatico'){
-      s+='<line x1="'+(xF+TAL+LK)+'" y1="'+(yBB-1)+'" x2="'+(xD-TAL-LK)+'" y2="'+(yBB-1)+'"/>\n';
+      if(S.candado){
+        (function(){var _xa=xF+TAL+LK,_xb=xD-TAL-LK,_cx=xF+L/2,_y=yBB-1;
+        var _v71x=_cx-S.lockW/2-1,_v72x=_cx+S.lockW/2+1;
+        s+='<line x1="'+_xa+'" y1="'+_y+'" x2="'+_v71x+'" y2="'+_y+'"/>\n';
+        s+='<line x1="'+_v72x+'" y1="'+_y+'" x2="'+_xb+'" y2="'+_y+'"/>\n';
+        }());
+      }else{
+        s+='<line x1="'+(xF+TAL+LK)+'" y1="'+(yBB-1)+'" x2="'+(xD-TAL-LK)+'" y2="'+(yBB-1)+'"/>\n';
+      }
       s+='<line x1="'+xD+'" y1="'+yPB+'" x2="'+xD+'" y2="'+yBB+'"/>\n';
     }
   }
   s+='</g>\n';
 
   // ── CUT CONTOUR ──
-  s+='<path d="'+contourPath(g,bt)+'" fill="none" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>\n';
+  s+='<path d="'+(S.candado?contourPathCandado(g,bt):contourPath(g,bt))+'" fill="none" stroke="'+S.cutColor+'" stroke-width="'+swC+'" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="'+cDash+'"/>\n';
 
   // ── L-TAB CUTS ──
   if(bt==='doble-solapa-alt'){
@@ -913,6 +1908,181 @@ function buildExportSVG(){
     if(bt!=='cierre-automatico'){
       s+=cpath('M '+xD+' '+yBB+' L '+(xD-TAL-LK)+' '+yBB+' L '+(xD-TAL-LK)+' '+(yBB-2));
       s+=cpath('M '+xF+' '+yBB+' L '+(xF+TAL+LK)+' '+yBB+' L '+(xF+TAL+LK)+' '+(yBB-2));
+    }
+  }
+
+  // ── CANDADO: cortes y ranura ──
+  if(S.candado){
+    var _esq2=Math.sqrt(2);
+
+    // ── Cierre superior+inferior (doble-solapa): v65-v76 ──
+    if(bt==='doble-solapa'){
+      var _v65x=xF+L/2-S.lockW/2-1,_v66x=xF+L/2+S.lockW/2+1,_eTTy=yTT+1;
+      s+=cl(_v65x,_eTTy,_v65x+S.lockA+1,_eTTy);
+      s+=cl(_v66x,_eTTy,_v66x-S.lockA-1,_eTTy);
+      var _v67x=_v65x+S.lockA+1,_v68x=_v66x-S.lockA-1;
+      s+=cl(_v67x,_eTTy,_v67x+_esq2,_eTTy-_esq2);
+      s+=cl(_v68x,_eTTy,_v68x-_esq2,_eTTy-_esq2);
+      s+=cl(_v67x+_esq2,_eTTy-_esq2,_v68x-_esq2,_eTTy-_esq2);
+      var _v71x=xF+L/2-S.lockW/2-1,_v72x=xF+L/2+S.lockW/2+1,_eBBy=yBB-1;
+      s+=cl(_v71x,_eBBy,_v71x+S.lockA+1,_eBBy);
+      s+=cl(_v72x,_eBBy,_v72x-S.lockA-1,_eBBy);
+      var _v73x=_v71x+S.lockA+1,_v74x=_v72x-S.lockA-1;
+      s+=cl(_v73x,_eBBy,_v73x+_esq2,_eBBy+_esq2);
+      s+=cl(_v74x,_eBBy,_v74x-_esq2,_eBBy+_esq2);
+      s+=cl(_v73x+_esq2,_eBBy+_esq2,_v74x-_esq2,_eBBy+_esq2);
+    }
+
+    // ── Cierre superior (cierre-automatico): c54-c59 ──
+    if(bt==='cierre-automatico'){
+      var _c54x=xF+L/2-S.lockW/2-1,_c55x=xF+L/2+S.lockW/2+1,_eTy2=yTT+1;
+      s+=cl(_c54x,_eTy2,_c54x+S.lockA+1,_eTy2);
+      s+=cl(_c55x,_eTy2,_c55x-S.lockA-1,_eTy2);
+      var _c56x=_c54x+S.lockA+1,_c57x=_c55x-S.lockA-1;
+      s+=cl(_c56x,_eTy2,_c56x+_esq2,_eTy2-_esq2);
+      s+=cl(_c57x,_eTy2,_c57x-_esq2,_eTy2-_esq2);
+      s+=cl(_c56x+_esq2,_eTy2-_esq2,_c57x-_esq2,_eTy2-_esq2);
+    }
+
+    // ── Ranura candado TRASERO (doble-solapa + cierre-automatico) ──
+    if(bt==='doble-solapa'||bt==='cierre-automatico'){
+      var _rv37x=xT+L/2-S.lockW/2,_rv38x=xT+L/2+S.lockW/2;
+      var _rv47x=_rv37x+S.lockA,_rv48x=_rv47x+_esq2,_rv48y=yPT+_esq2;
+      var _rv49x=_rv38x-S.lockA,_rv50x=_rv49x-_esq2,_rv50y=yPT+_esq2;
+      s+=cl(_rv37x,yPT,_rv47x,yPT);
+      s+=cl(_rv47x,yPT,_rv48x,_rv48y);
+      s+=cl(_rv38x,yPT,_rv49x,yPT);
+      s+=cl(_rv49x,yPT,_rv50x,_rv50y);
+      s+=fl(_rv48x,_rv48y,_rv50x,_rv50y);
+      var _rlh=S.lockH/2,_rang=S.lockAngle*Math.PI/180,_radx=_rlh*Math.tan(_rang);
+      var _rsinA=Math.sin(_rang),_rcosA=Math.cos(_rang);
+      s+=cl(_rv37x,yPT,_rv37x,yPT+_rlh);
+      s+=cl(_rv38x,yPT,_rv38x,yPT+_rlh);
+      s+=fl(_rv37x,yPT+_rlh,_rv38x,yPT+_rlh);
+      var _rv52x=_rv37x+_radx,_rv52y=yPT-_rlh,_rv54x=_rv38x-_radx,_rv54y=yPT-_rlh;
+      var _rlr=S.lockR; if(_rlr<0)_rlr=0;
+      var _rtd=(_rcosA>0.001&&_rlr>0)?_rlr*(1-_rsinA)/_rcosA:0;
+      var _rmaxTd=Math.min(_rlh*0.85,(_rv54x-_rv52x)*0.45);
+      if(_rtd>_rmaxTd){_rtd=_rmaxTd;_rlr=(_rcosA>0.001&&(1-_rsinA)>0.001)?_rtd*_rcosA/(1-_rsinA):0;}
+      var _rtp='M '+_rv37x+' '+yPT;
+      if(_rlr>0&&_rtd>0){
+        _rtp+=' L '+(_rv52x-_rtd*_rsinA)+' '+(_rv52y+_rtd*_rcosA);
+        _rtp+=' A '+_rlr+' '+_rlr+' 0 0 1 '+(_rv52x+_rtd)+' '+_rv52y;
+        _rtp+=' L '+(_rv54x-_rtd)+' '+_rv54y;
+        _rtp+=' A '+_rlr+' '+_rlr+' 0 0 1 '+(_rv54x+_rtd*_rsinA)+' '+(_rv54y+_rtd*_rcosA);
+        _rtp+=' L '+_rv38x+' '+yPT;
+      }else{
+        _rtp+=' L '+_rv52x+' '+_rv52y+' L '+_rv54x+' '+_rv54y+' L '+_rv38x+' '+yPT;
+      }
+      s+=cpath(_rtp);
+      // Espejo inferior del candado (solo doble-solapa)
+      if(bt==='doble-solapa'){
+        var _rbv37x=xT+L/2-S.lockW/2,_rbv38x=xT+L/2+S.lockW/2;
+        var _rbv47x=_rbv37x+S.lockA,_rbv48x=_rbv47x+_esq2,_rbv48y=yPB-_esq2;
+        var _rbv49x=_rbv38x-S.lockA,_rbv50x=_rbv49x-_esq2,_rbv50y=yPB-_esq2;
+        s+=cl(_rbv37x,yPB,_rbv47x,yPB);
+        s+=cl(_rbv47x,yPB,_rbv48x,_rbv48y);
+        s+=cl(_rbv38x,yPB,_rbv49x,yPB);
+        s+=cl(_rbv49x,yPB,_rbv50x,_rbv50y);
+        s+=fl(_rbv48x,_rbv48y,_rbv50x,_rbv50y);
+        s+=cl(_rbv37x,yPB,_rbv37x,yPB-_rlh);
+        s+=cl(_rbv38x,yPB,_rbv38x,yPB-_rlh);
+        s+=fl(_rbv37x,yPB-_rlh,_rbv38x,yPB-_rlh);
+        var _rbv52x=_rbv37x+_radx,_rbv52y=yPB+_rlh,_rbv54x=_rbv38x-_radx,_rbv54y=yPB+_rlh;
+        var _rblr=S.lockR; if(_rblr<0)_rblr=0;
+        var _rbtd=(_rcosA>0.001&&_rblr>0)?_rblr*(1-_rsinA)/_rcosA:0;
+        var _rbmaxTd=Math.min(_rlh*0.85,(_rbv54x-_rbv52x)*0.45);
+        if(_rbtd>_rbmaxTd){_rbtd=_rbmaxTd;_rblr=(_rcosA>0.001&&(1-_rsinA)>0.001)?_rbtd*_rcosA/(1-_rsinA):0;}
+        var _rbtp='M '+_rbv37x+' '+yPB;
+        if(_rblr>0&&_rbtd>0){
+          _rbtp+=' L '+(_rbv52x-_rbtd*_rsinA)+' '+(_rbv52y-_rbtd*_rcosA);
+          _rbtp+=' A '+_rblr+' '+_rblr+' 0 0 0 '+(_rbv52x+_rbtd)+' '+_rbv52y;
+          _rbtp+=' L '+(_rbv54x-_rbtd)+' '+_rbv54y;
+          _rbtp+=' A '+_rblr+' '+_rblr+' 0 0 0 '+(_rbv54x+_rbtd*_rsinA)+' '+(_rbv54y-_rbtd*_rcosA);
+          _rbtp+=' L '+_rbv38x+' '+yPB;
+        }else{
+          _rbtp+=' L '+_rbv52x+' '+_rbv52y+' L '+_rbv54x+' '+_rbv54y+' L '+_rbv38x+' '+yPB;
+        }
+        s+=cpath(_rbtp);
+      }
+    }
+
+    // ── Candado doble-solapa-alt: ranura FRONTAL (yPT) + TRASERO espejo (yPB) + cierres ──
+    if(bt==='doble-solapa-alt'){
+      var _alh=S.lockH/2,_aang=S.lockAngle*Math.PI/180,_aadx=_alh*Math.tan(_aang);
+      var _asinA=Math.sin(_aang),_acosA=Math.cos(_aang);
+      // Superior FRONTAL: centrado en xF+L/2, en yPT
+      var _atv37x=xF+L/2-S.lockW/2,_atv38x=xF+L/2+S.lockW/2;
+      var _atv47x=_atv37x+S.lockA,_atv48x=_atv47x+_esq2,_atv48y=yPT+_esq2;
+      var _atv49x=_atv38x-S.lockA,_atv50x=_atv49x-_esq2,_atv50y=yPT+_esq2;
+      s+=cl(_atv37x,yPT,_atv47x,yPT);
+      s+=cl(_atv47x,yPT,_atv48x,_atv48y);
+      s+=cl(_atv38x,yPT,_atv49x,yPT);
+      s+=cl(_atv49x,yPT,_atv50x,_atv50y);
+      s+=fl(_atv48x,_atv48y,_atv50x,_atv50y);
+      s+=cl(_atv37x,yPT,_atv37x,yPT+_alh);
+      s+=cl(_atv38x,yPT,_atv38x,yPT+_alh);
+      s+=fl(_atv37x,yPT+_alh,_atv38x,yPT+_alh);
+      var _atv52x=_atv37x+_aadx,_atv52y=yPT-_alh,_atv54x=_atv38x-_aadx,_atv54y=yPT-_alh;
+      var _atlr=S.lockR; if(_atlr<0)_atlr=0;
+      var _attd=(_acosA>0.001&&_atlr>0)?_atlr*(1-_asinA)/_acosA:0;
+      var _atmaxTd=Math.min(_alh*0.85,(_atv54x-_atv52x)*0.45);
+      if(_attd>_atmaxTd){_attd=_atmaxTd;_atlr=(_acosA>0.001&&(1-_asinA)>0.001)?_attd*_acosA/(1-_asinA):0;}
+      var _attp='M '+_atv37x+' '+yPT;
+      if(_atlr>0&&_attd>0){
+        _attp+=' L '+(_atv52x-_attd*_asinA)+' '+(_atv52y+_attd*_acosA);
+        _attp+=' A '+_atlr+' '+_atlr+' 0 0 1 '+(_atv52x+_attd)+' '+_atv52y;
+        _attp+=' L '+(_atv54x-_attd)+' '+_atv54y;
+        _attp+=' A '+_atlr+' '+_atlr+' 0 0 1 '+(_atv54x+_attd*_asinA)+' '+(_atv54y+_attd*_acosA);
+        _attp+=' L '+_atv38x+' '+yPT;
+      }else{
+        _attp+=' L '+_atv52x+' '+_atv52y+' L '+_atv54x+' '+_atv54y+' L '+_atv38x+' '+yPT;
+      }
+      s+=cpath(_attp);
+      // Espejo inferior TRASERO: centrado en xT+L/2, en yPB
+      var _abv37x=xT+L/2-S.lockW/2,_abv38x=xT+L/2+S.lockW/2;
+      var _abv47x=_abv37x+S.lockA,_abv48x=_abv47x+_esq2,_abv48y=yPB-_esq2;
+      var _abv49x=_abv38x-S.lockA,_abv50x=_abv49x-_esq2,_abv50y=yPB-_esq2;
+      s+=cl(_abv37x,yPB,_abv47x,yPB);
+      s+=cl(_abv47x,yPB,_abv48x,_abv48y);
+      s+=cl(_abv38x,yPB,_abv49x,yPB);
+      s+=cl(_abv49x,yPB,_abv50x,_abv50y);
+      s+=fl(_abv48x,_abv48y,_abv50x,_abv50y);
+      s+=cl(_abv37x,yPB,_abv37x,yPB-_alh);
+      s+=cl(_abv38x,yPB,_abv38x,yPB-_alh);
+      s+=fl(_abv37x,yPB-_alh,_abv38x,yPB-_alh);
+      var _abv52x=_abv37x+_aadx,_abv52y=yPB+_alh,_abv54x=_abv38x-_aadx,_abv54y=yPB+_alh;
+      var _ablr=S.lockR; if(_ablr<0)_ablr=0;
+      var _abtd=(_acosA>0.001&&_ablr>0)?_ablr*(1-_asinA)/_acosA:0;
+      var _abmaxTd=Math.min(_alh*0.85,(_abv54x-_abv52x)*0.45);
+      if(_abtd>_abmaxTd){_abtd=_abmaxTd;_ablr=(_acosA>0.001&&(1-_asinA)>0.001)?_abtd*_acosA/(1-_asinA):0;}
+      var _abtp='M '+_abv37x+' '+yPB;
+      if(_ablr>0&&_abtd>0){
+        _abtp+=' L '+(_abv52x-_abtd*_asinA)+' '+(_abv52y-_abtd*_acosA);
+        _abtp+=' A '+_ablr+' '+_ablr+' 0 0 0 '+(_abv52x+_abtd)+' '+_abv52y;
+        _abtp+=' L '+(_abv54x-_abtd)+' '+_abv54y;
+        _abtp+=' A '+_ablr+' '+_ablr+' 0 0 0 '+(_abv54x+_abtd*_asinA)+' '+(_abv54y-_abtd*_acosA);
+        _abtp+=' L '+_abv38x+' '+yPB;
+      }else{
+        _abtp+=' L '+_abv52x+' '+_abv52y+' L '+_abv54x+' '+_abv54y+' L '+_abv38x+' '+yPB;
+      }
+      s+=cpath(_abtp);
+      // Cierre superior (yTT+1): centrado en xT+L/2, diagonales arriba
+      var _ac65x=xT+L/2-S.lockW/2-1,_ac66x=xT+L/2+S.lockW/2+1,_aeCTy=yTT+1;
+      s+=cl(_ac65x,_aeCTy,_ac65x+S.lockA+1,_aeCTy);
+      s+=cl(_ac66x,_aeCTy,_ac66x-S.lockA-1,_aeCTy);
+      var _ac67x=_ac65x+S.lockA+1,_ac68x=_ac66x-S.lockA-1;
+      s+=cl(_ac67x,_aeCTy,_ac67x+_esq2,_aeCTy-_esq2);
+      s+=cl(_ac68x,_aeCTy,_ac68x-_esq2,_aeCTy-_esq2);
+      s+=cl(_ac67x+_esq2,_aeCTy-_esq2,_ac68x-_esq2,_aeCTy-_esq2);
+      // Cierre inferior (yBB-1): centrado en xF+L/2, diagonales abajo
+      var _ac71x=xF+L/2-S.lockW/2-1,_ac72x=xF+L/2+S.lockW/2+1,_aeCBy=yBB-1;
+      s+=cl(_ac71x,_aeCBy,_ac71x+S.lockA+1,_aeCBy);
+      s+=cl(_ac72x,_aeCBy,_ac72x-S.lockA-1,_aeCBy);
+      var _ac73x=_ac71x+S.lockA+1,_ac74x=_ac72x-S.lockA-1;
+      s+=cl(_ac73x,_aeCBy,_ac73x+_esq2,_aeCBy+_esq2);
+      s+=cl(_ac74x,_aeCBy,_ac74x-_esq2,_aeCBy+_esq2);
+      s+=cl(_ac73x+_esq2,_aeCBy+_esq2,_ac74x-_esq2,_aeCBy+_esq2);
     }
   }
 
@@ -1025,11 +2195,12 @@ function render(){
   var sws=document.querySelectorAll('.sw[data-key]');
   for(var i=0;i<sws.length;i++){
     var sw=sws[i];var k=sw.dataset.key;
-    var val=k==='cutDash'?S.cutDash:k==='foldDash'?S.foldDash:k==='showCotas'?S.showCotas:false;
+    var val=k==='cutDash'?S.cutDash:k==='foldDash'?S.foldDash:k==='showCotas'?S.showCotas:k==='candado'?S.candado:false;
     sw.classList.toggle('on',val);
     var hint=sw.parentElement.querySelector('.hint');
     if(hint)hint.textContent=val?'on':'off';
   }
+  if(S.candado!==_prevCandado){_prevCandado=S.candado;buildSidebar();}
 
   var cg=document.querySelector('.colors-group');
   if(cg)cg.classList.toggle('disabled',S.noColor);
@@ -1051,139 +2222,9 @@ function render(){
     svgWrap.innerHTML=buildSVG(g,'main',{showUI:true});
     var _tw=Math.round(g.tw*10)/10,_th=Math.round(g.th*10)/10;
     metricsBar.innerHTML=mc('Ancho total',_tw+' mm')+mc('Alto total',_th+' mm')+mc('Paneles','6')+mc('Superficie',(_tw*_th/100).toFixed(1)+' cm²');
-    // Vertex reference overlay
+    // Vertex overlay is now embedded in the SVG by buildSVG — canvas not needed
     var vc=document.getElementById('vertCanvas');
-    if(!vc){vc=document.createElement('canvas');vc.id='vertCanvas';vc.style.cssText='position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2';svgWrap.appendChild(vc);}
-    var dpr=window.devicePixelRatio||1;var rect=svgWrap.getBoundingClientRect();vc.width=rect.width*dpr;vc.height=rect.height*dpr;
-    var ctx=vc.getContext('2d');ctx.scale(dpr,dpr);ctx.clearRect(0,0,rect.width,rect.height);
-    if(!showVerts){vc.style.display='none';return;}
-    vc.style.display='';
-    var svg=svgWrap.querySelector('svg');if(!svg)return;
-    var vb=svg.viewBox.baseVal;var sw=rect.width/vb.width,sh=rect.height/vb.height,sc=Math.min(sw,sh);
-    var ox=(rect.width-vb.width*sc)/2-vb.x*sc,oy=(rect.height-vb.height*sc)/2-vb.y*sc;
-    function toS(cx,cy){return[ox+cx*sc,oy+cy*sc];}
-    var verts;
-    if(S.boxType==='doble-solapa-alt'){
-      // Alternada: cierre SUP above TRASERO (xT→xI), cierre INF below FRONTAL (xF→xD)
-      // Top flaps MIRRORED: talones en lados interiores
-      verts=[
-        // ── Top cierre (above TRASERO) ──
-        [g.xT,g.yCT+g.R],[g.xT+g.R,g.yCT],          // 1-2  TL rounded corner
-        [g.xI-g.R,g.yCT],[g.xI,g.yCT+g.R],           // 3-4  TR rounded corner
-        [g.xI,g.yTT],                                  // 5    fold cierre/tapa (right)
-        [g.xI-g.TAL-g.LK,g.yTT],[g.xI-g.TAL-g.LK,g.yTT+2], // 6-7  L-tab right
-        [g.xI,g.yPT],                                  // 8    tapa → main body
-        // ── Left flap MIRRORED (talón on right/xF) ──
-        [g.xI+g.TI,g.yPT-g.TH],[g.xF-g.TI,g.yPT-g.TH], // 9-10 flap tip
-        [g.xF,g.yPT-g.TAL],[g.xF,g.yPT],             // 11-12 talón right + base
-        // ── Right flap MIRRORED (talón on left/xD) ──
-        [g.xD,g.yPT],                                  // 13   DERECHO top-L
-        [g.xD,g.yPT-g.TAL],                           // 14   talón left
-        [g.xD+g.TI,g.yPT-g.TH],[g.xD+g.A-g.TI,g.yPT-g.TH], // 15-16 flap tip
-        [g.xDR,g.yPT],                                 // 17   flap base-R
-        // ── Right main body + bottom right flap ──
-        [g.xDR,g.yPB],                                 // 18
-        [g.xDR,g.yPB+g.TAL],                          // 19   talón
-        [g.xD+g.A-g.TI,g.yPB+g.TH],[g.xD+g.TI,g.yPB+g.TH], // 20-21
-        [g.xD,g.yPB],                                  // 22
-        // ── Bottom cierre (below FRONTAL, same as regular) ──
-        [g.xD,g.yBB],                                  // 23
-        [g.xD-g.TAL-g.LK,g.yBB],[g.xD-g.TAL-g.LK,g.yBB-2], // 24-25 L-tab right
-        [g.xD,g.yCB-g.R],[g.xD-g.R,g.yCB],           // 26-27 BR rounded corner
-        [g.xF+g.R,g.yCB],[g.xF,g.yCB-g.R],           // 28-29 BL rounded corner
-        [g.xF,g.yBB],                                  // 30
-        [g.xF+g.TAL+g.LK,g.yBB],[g.xF+g.TAL+g.LK,g.yBB-2], // 31-32 L-tab left
-        [g.xF,g.yPB],                                  // 33
-        // ── Bottom left flap ──
-        [g.xF-g.TI,g.yPB+g.TH],[g.xI+g.TI,g.yPB+g.TH], // 34-35
-        [g.xI,g.yPB+g.TAL],                           // 36   talón
-        [g.xI,g.yPB],[g.xT,g.yPB],                    // 37-38
-        // ── Left side + PEGA ──
-        [g.xPL,g.yPB-g.PW],[g.xPL,g.yPT+g.PW],       // 39-40
-        [g.xT,g.yPT],                                  // 41   TRASERO top-L (close)
-        // ── L-tab left of top cierre ──
-        [g.xT,g.yTT],                                  // 42   fold cierre/tapa (left)
-        [g.xT+g.TAL+g.LK,g.yTT],[g.xT+g.TAL+g.LK,g.yTT+2] // 43-44 L-tab left
-      ];
-    } else if(S.boxType==='cierre-automatico'){
-      // Cierre automático: same top as doble-solapa, open bottom (straight cut at yPB)
-      verts=[
-        [g.xF,g.yCT+g.R],[g.xF+g.R,g.yCT],           // 1-2  TL rounded corner
-        [g.xD-g.R,g.yCT],[g.xD,g.yCT+g.R],           // 3-4  TR rounded corner
-        [g.xD,g.yTT],                                  // 5    fold cierre/tapa (right)
-        [g.xD-g.TAL-g.LK,g.yTT],[g.xD-g.TAL-g.LK,g.yTT+2], // 6-7  L-tab right
-        [g.xD,g.yPT],                                  // 8    tapa → main body
-        [g.xD+g.TI,g.yPT-g.TH],[g.xD+g.A-g.TI,g.yPT-g.TH], // 9-10 right flap tip
-        [g.xDR,g.yPT-g.TAL],[g.xDR,g.yPT],           // 11-12 right flap talón + base
-        [g.xDR,g.yPB],                                 // 13   bottom-right corner
-        [g.xD,g.yPB],                                  // 14   fold ref xD bottom
-        [g.xF,g.yPB],                                  // 15   fold ref xF bottom
-        [g.xI,g.yPB],                                  // 16   fold ref xI bottom
-        [g.xT,g.yPB],                                  // 17   bottom-left corner
-        [g.xPL,g.yPB-g.PW],[g.xPL,g.yPT+g.PW],       // 18-19 PEGA
-        [g.xT,g.yPT],                                  // 20   TRASERO top-L
-        [g.xI,g.yPT],[g.xI,g.yPT-g.TAL],             // 21-22 left flap talón
-        [g.xI+g.TI,g.yPT-g.TH],[g.xI+g.A-g.TI,g.yPT-g.TH], // 23-24 left flap tip
-        [g.xF,g.yPT],                                  // 25   left flap base-R
-        [g.xF+g.TAL+g.LK,g.yTT+2],[g.xF+g.TAL+g.LK,g.yTT], // 26-27 L-tab left
-        [g.xF,g.yTT],                                  // 28   closing fold
-        // ── Mecanismo de cierre ──
-        [g.xD-Math.sin(20*Math.PI/180)*0.07*g.A, g.yPB+Math.cos(20*Math.PI/180)*0.07*g.A],           // 29 fin seg inclinado
-        [g.xD-Math.sin(20*Math.PI/180)*0.07*g.A, g.yPB+Math.cos(20*Math.PI/180)*0.07*g.A+0.63*g.A], // 30 fin seg vertical
-        [g.xD-g.A/2, g.yPB+g.A/2],  // 31 intersección: fin doblez 45° / fin corte horiz
-        [g.xF+g.L/2,  g.yPB+g.A/2], // 32 inicio corte horizontal (punto medio)
-        // v33: intersección corte 45° desde v31 con horizontal desde v30
-        (function(){var cos20=Math.cos(20*Math.PI/180);var caY2=g.yPB+cos20*0.07*g.A+0.63*g.A;var t=caY2-(g.yPB+g.A/2);return[g.xD-g.A/2+t,caY2];}()), // 33
-        [g.xF+g.L/2, g.yPB+g.A/2+S.cunaH],  // 34 fin cuña de cierre
-        // ── Lado derecho externo ──
-        (function(){var sin20=Math.sin(20*Math.PI/180),cos20=Math.cos(20*Math.PI/180);return[g.xD+sin20*0.07*g.A, g.yPB+cos20*0.07*g.A];}()),  // 38 fin inclinado v14→der
-        (function(){var sin20=Math.sin(20*Math.PI/180),cos20=Math.cos(20*Math.PI/180);return[g.xD+sin20*0.07*g.A, g.yPB+cos20*0.07*g.A+0.53*g.A];}()), // 39 fin vertical 53%
-        (function(){var cos20=Math.cos(20*Math.PI/180);var t=cos20*0.07*g.A+0.53*g.A;return[g.xDR-t, g.yPB+t];}()),  // 40 intersección horiz/45°
-        // ── Panel IZQUIERDO (rotado 180°) ──
-        (function(){var sin20=Math.sin(20*Math.PI/180),cos20=Math.cos(20*Math.PI/180);return[g.xI+sin20*0.07*g.A, g.yPB+cos20*0.07*g.A];}()),  // 41 fin inclinado v16→der
-        (function(){var sin20=Math.sin(20*Math.PI/180),cos20=Math.cos(20*Math.PI/180);return[g.xI+sin20*0.07*g.A, g.yPB+cos20*0.07*g.A+0.53*g.A];}()), // 42 fin vertical
-        (function(){var cos20=Math.cos(20*Math.PI/180);var t=cos20*0.07*g.A+0.53*g.A;return[g.xF-t, g.yPB+t];}()),  // 43 intersección horiz/45°
-        // ── Lado izquierdo ──
-        (function(){var sin20=Math.sin(20*Math.PI/180),cos20=Math.cos(20*Math.PI/180);return[g.xF+sin20*0.07*g.A, g.yPB+cos20*0.07*g.A];}()), // 35 fin inclinado v15
-        (function(){var cos20=Math.cos(20*Math.PI/180);var caY2=g.yPB+cos20*0.07*g.A+0.63*g.A;var ca34y=g.yPB+g.A/2+S.cunaH;return[g.xF+g.L/2-(caY2-ca34y), caY2];}()),  // 36 rodilla 45° desde v34
-        (function(){var sin20=Math.sin(20*Math.PI/180),cos20=Math.cos(20*Math.PI/180);return[g.xF+sin20*0.07*g.A, g.yPB+cos20*0.07*g.A+0.63*g.A];}()) // 37 intersección
-      ];
-    } else {
-      // doble-solapa regular: cierre SUP+INF above/below FRONTAL (xF→xD)
-      verts=[
-        [g.xF,g.yCT+g.R],[g.xF+g.R,g.yCT],           // 1-2  TL rounded corner
-        [g.xD-g.R,g.yCT],[g.xD,g.yCT+g.R],           // 3-4  TR rounded corner
-        [g.xD,g.yTT],                                  // 5
-        [g.xD-g.TAL-g.LK,g.yTT],[g.xD-g.TAL-g.LK,g.yTT+2], // 6-7  L-tab right
-        [g.xD,g.yPT],                                  // 8
-        [g.xD+g.TI,g.yPT-g.TH],[g.xD+g.A-g.TI,g.yPT-g.TH],[g.xDR,g.yPT-g.TAL],[g.xDR,g.yPT], // 9-12
-        [g.xDR,g.yPB],[g.xDR,g.yPB+g.TAL],           // 13-14
-        [g.xD+g.A-g.TI,g.yPB+g.TH],[g.xD+g.TI,g.yPB+g.TH], // 15-16
-        [g.xD,g.yPB],                                  // 17
-        [g.xD,g.yBB],                                  // 18
-        [g.xD-g.TAL-g.LK,g.yBB],[g.xD-g.TAL-g.LK,g.yBB-2], // 19-20 L-tab right
-        [g.xD,g.yCB-g.R],[g.xD-g.R,g.yCB],           // 21-22
-        [g.xF+g.R,g.yCB],[g.xF,g.yCB-g.R],           // 23-24
-        [g.xF,g.yBB],                                  // 25
-        [g.xF+g.TAL+g.LK,g.yBB],[g.xF+g.TAL+g.LK,g.yBB-2], // 26-27 L-tab left
-        [g.xF,g.yPB],                                  // 28
-        [g.xI+g.A-g.TI,g.yPB+g.TH],[g.xI+g.TI,g.yPB+g.TH], // 29-30
-        [g.xI,g.yPB+g.TAL],                           // 31
-        [g.xI,g.yPB],[g.xT,g.yPB],                    // 32-33
-        [g.xPL,g.yPB-g.PW],[g.xPL,g.yPT+g.PW],       // 34-35
-        [g.xT,g.yPT],[g.xI,g.yPT],[g.xI,g.yPT-g.TAL], // 36-38
-        [g.xI+g.TI,g.yPT-g.TH],[g.xI+g.A-g.TI,g.yPT-g.TH],[g.xF,g.yPT], // 39-41
-        [g.xF+g.TAL+g.LK,g.yTT+2],[g.xF+g.TAL+g.LK,g.yTT], // 42-43 L-tab left
-        [g.xF,g.yTT]                                   // 44
-      ];
-    }
-    ctx.font='600 9px "Geist Mono",monospace';ctx.textAlign='center';ctx.textBaseline='middle';
-    var r=7;
-    for(var i=0;i<verts.length;i++){
-      var p=toS(verts[i][0],verts[i][1]);
-      ctx.beginPath();ctx.arc(p[0],p[1],r,0,Math.PI*2);ctx.fillStyle='rgba(239,68,68,0.85)';ctx.fill();
-      ctx.fillStyle='#fff';ctx.fillText(''+(i+1),p[0],p[1]);
-    }
+    if(vc)vc.style.display='none';
     svgCard.style.cursor='pointer';
   }else{
     svgWrap.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-secondary);font-family:\'Geist Mono\',monospace;font-size:.75rem">Corregi los valores ingresados</div>';
@@ -1193,6 +2234,30 @@ function render(){
 function mc(l,v){return'<div class="met"><span class="ml">'+l+'</span><span class="mv">'+v+'</span></div>';}
 
 /* ═══════════════════ SIDEBAR ═══════════════════ */
+// Bloque de candado reutilizable en los tres paneles de solapas.
+// Switch siempre visible; variables del candado solo cuando está activo.
+function candadoBlock(){
+  var h='';
+  h+='<div class="card" style="padding:0;overflow:hidden">';
+  h+='<div class="card-hd" style="display:flex;align-items:center;justify-content:space-between">';
+  h+='<span>Candado</span>';
+  h+='<div class="sw'+(S.candado?' on':'')+'" data-key="candado"></div>';
+  h+='</div>';
+  if(S.candado){
+    h+='<div class="card-bd">';
+    h+='<div class="card-grid card-grid-2">';
+    h+=gcInput('lockW','Largo ranura',S.lockW,10,Math.floor(S.largo*0.9),'mm');
+    h+=gcInput('lockH','Alto candado',S.lockH,4,50,'mm');
+    h+=gcInput('lockA','Anclaje',S.lockA,1,20,'mm');
+    h+=gcInput('lockAngle','Ángulo',S.lockAngle,0,45,'°');
+    h+=gcInput('lockR','Radio esquinas',S.lockR,0,15,'mm');
+    h+='</div>';
+    h+='</div>';
+  }
+  h+='</div>';
+  return h;
+}
+
 function buildSidebar(){
   var sb=document.getElementById('sidebar');var h='';
 
@@ -1209,6 +2274,7 @@ function buildSidebar(){
   for(var bt=0;bt<BOX_TYPES.length;bt++){
     var b=BOX_TYPES[bt];
     h+='<div class="box-type-card'+(S.boxType===b.id?' active':'')+'" data-btype="'+b.id+'">';
+    h+='<span class="box-type-badge">'+(bt+1)+'</span>';
     h+='<img src="'+b.thumb+'" alt="'+b.name+'">';
     h+='<span class="bt-name">'+b.name+'</span>';
     h+='</div>';
@@ -1242,6 +2308,7 @@ function buildSidebar(){
   h+='<div class="solapaH-hint" style="font-size:.6rem;color:var(--accent-red);font-family:\'Geist Mono\',monospace;padding-left:.1rem"></div>';
   h+='</div>';
   h+='</div>';
+  h+=candadoBlock();
   h+='</div></div>';
 
   // ── Panel: Cierre doble solapa alternada ──
@@ -1259,6 +2326,7 @@ function buildSidebar(){
   h+='<div class="solapaH-hint" style="font-size:.6rem;color:var(--accent-red);font-family:\'Geist Mono\',monospace;padding-left:.1rem"></div>';
   h+='</div>';
   h+='</div>';
+  h+=candadoBlock();
   h+='</div></div>';
 
   // ── Panel: Solapas superiores (cierre automático) ──
@@ -1276,6 +2344,7 @@ function buildSidebar(){
   h+='<div class="solapaH-hint" style="font-size:.6rem;color:var(--accent-red);font-family:\'Geist Mono\',monospace;padding-left:.1rem"></div>';
   h+='</div>';
   h+='</div>';
+  h+=candadoBlock();
   h+='</div></div>';
 
   // ── Panel: Cierre automático ──
