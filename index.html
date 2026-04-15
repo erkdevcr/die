@@ -3058,8 +3058,8 @@ function vwZoomAt(cx,cy,factor){
   var nz=Math.max(1,vwZoom*factor);
   if(nz===vwZoom)return;
   var ratio=nz/vwZoom;
-  vwPanX=vwPanX+(cx-cx0)*(1-ratio);
-  vwPanY=vwPanY+(cy-cy0)*(1-ratio);
+  vwPanX=vwPanX*ratio+(cx-cx0)*(1-ratio);
+  vwPanY=vwPanY*ratio+(cy-cy0)*(1-ratio);
   vwZoom=nz;
   if(vwZoom===1){vwPanX=0;vwPanY=0;}
   applyVwZoom();
