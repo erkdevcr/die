@@ -374,7 +374,7 @@ function getTC(){
 /* ═══════════════════ STATE ═══════════════════ */
 var S={
   largo:100,ancho:80,alto:100,
-  pegaW:10,cierreH:10,redondeo:2,talon:5,lock:1,cunaH:5,solapaH:0,csaAngle:15,csaCAngle:0,csaRound:4,csaCRound:4,
+  pegaW:10,cierreH:10,redondeo:2,cierreAngle:0,talon:5,lock:1,cunaH:5,solapaH:0,csaAngle:15,csaCAngle:0,csaRound:4,csaCRound:4,
   candado:false,
   cdW:20,cdH:8,  // candado: ancho y alto de la lengüeta (mm) — nombres/valores provisionales
   lockW:25,      // candado: largo total de la ranura (v37→v38), centrada en panel
@@ -403,8 +403,9 @@ function calc(p,mode){
   var TH=Math.min(p.solapaH>0?p.solapaH:maxTH,maxTH);
   var TI=Math.round(A*0.26);
   var M=(mode==='lb')?12:0;
+  var TA=A+1; // alto de tapas = ancho + 1 mm
   var xPL=M-PW,xT=M,xI=M+L,xF=M+L+A,xD=M+2*L+A,xDR=M+2*L+2*A;
-  var yPT=M+CH+A,yPB=yPT+H,yTT=yPT-A,yCT=yTT-CH,yBB=yPB+A,yCB=yBB+CH;
+  var yPT=M+CH+TA,yPB=yPT+H,yTT=yPT-TA,yCT=yTT-CH,yBB=yPB+TA,yCB=yBB+CH;
   var pad=Math.max(R+2,2);
   var vx=xPL-pad,vy=yCT-R-pad,vw=xDR-xPL+2*pad,vh=yCB+R-yCT+2*pad;
   // Total physical dimensions per box type (matches actual SVG content box)
@@ -412,14 +413,14 @@ function calc(p,mode){
   var th_phys;
   if(p.boxType==='cierre-automatico'){
     // Bottom extends to lock mechanism tip instead of full yCB
-    th_phys=CH+A+H+(Math.cos(20*Math.PI/180)*0.07+0.63)*A;
+    th_phys=CH+TA+H+(Math.cos(20*Math.PI/180)*0.07+0.63)*A;
   } else if(p.boxType==='cierre-semi-automatico'){
     // Bottom extends to yPB + 3/4·A (mechanism base)
-    th_phys=CH+A+H+0.75*A;
+    th_phys=CH+TA+H+0.75*A;
   } else {
-    th_phys=H+2*A+2*CH;
+    th_phys=H+2*TA+2*CH;
   }
-  return{L:L,A:A,H:H,PW:PW,CH:CH,R:R,TH:TH,TI:TI,TAL:TAL,LK:LK,M:M,
+  return{L:L,A:A,TA:TA,H:H,PW:PW,CH:CH,R:R,TH:TH,TI:TI,TAL:TAL,LK:LK,M:M,
     xPL:xPL,xT:xT,xI:xI,xF:xF,xD:xD,xDR:xDR,
     yPT:yPT,yPB:yPB,yTT:yTT,yCT:yCT,yBB:yBB,yCB:yCB,
     vx:vx,vy:vy,vw:vw,vh:vh,
@@ -446,10 +447,13 @@ function contourPath(g,bt,origBt){
 
   if(bt==='doble-solapa-alt'){
     // Top cierre above TRASERO (xT→xI), bottom cierre below FRONTAL (xF→xD)
-    return'M '+xT+' '+(yCT+R)+
-      ' A '+R+' '+R+' 0 0 1 '+(xT+R)+' '+yCT+
-      ' L '+(xI-R)+' '+yCT+
-      ' A '+R+' '+R+' 0 0 1 '+xI+' '+(yCT+R)+
+    var _caDA=(yTT-yCT)*Math.tan(S.cierreAngle*Math.PI/180);
+    var _sinA=Math.sin(S.cierreAngle*Math.PI/180),_cosA=Math.cos(S.cierreAngle*Math.PI/180);
+    var _pbA=(_cosA>0.001)?R*(1-_sinA)/_cosA:R,_pbsA=_pbA*_sinA,_pbcA=_pbA*_cosA;
+    return'M '+(xT+_caDA-_pbsA)+' '+(yCT+_pbcA)+
+      ' A '+R+' '+R+' 0 0 1 '+(xT+_caDA+_pbA)+' '+yCT+
+      ' L '+(xI-_caDA-_pbA)+' '+yCT+
+      ' A '+R+' '+R+' 0 0 1 '+(xI-_caDA+_pbsA)+' '+(yCT+_pbcA)+
       ' L '+xI+' '+yTT+' L '+xI+' '+yPT+
       // Top-left flap MIRRORED: talón on RIGHT (xF side)
       ' L '+(tlX+5/Math.SQRT2)+' '+(yPT-5/Math.SQRT2)+
@@ -466,26 +470,29 @@ function contourPath(g,bt,origBt){
       ' L '+brEnd+' '+(yPB+TH)+' L '+(brX+5/Math.SQRT2)+' '+(yPB+TH)+
       ' L '+(brX+5/Math.SQRT2)+' '+(yPB+5/Math.SQRT2)+
       ' L '+xD+' '+yPB+' L '+xD+' '+yBB+
-      ' L '+xD+' '+(yCB-R)+
-      ' A '+R+' '+R+' 0 0 1 '+(xD-R)+' '+yCB+
-      ' L '+(xF+R)+' '+yCB+
-      ' A '+R+' '+R+' 0 0 1 '+xF+' '+(yCB-R)+
+      ' L '+(xD-_caDA+_pbsA)+' '+(yCB-_pbcA)+
+      ' A '+R+' '+R+' 0 0 1 '+(xD-_caDA-_pbA)+' '+yCB+
+      ' L '+(xF+_caDA+_pbA)+' '+yCB+
+      ' A '+R+' '+R+' 0 0 1 '+(xF+_caDA-_pbsA)+' '+(yCB-_pbcA)+
       ' L '+xF+' '+yBB+' L '+xF+' '+yPB+
       ' L '+(blX2-5/Math.SQRT2)+' '+(yPB+5/Math.SQRT2)+
       ' L '+(blX2-5/Math.SQRT2)+' '+(yPB+TH)+' L '+blTip+' '+(yPB+TH)+
       ' L '+blTal+' '+(yPB+TAL)+
       ' L '+xI+' '+yPB+' L '+xT+' '+yPB+
       ' L '+xPL+' '+(yPB-g.PW)+' L '+xPL+' '+(yPT+g.PW)+
-      ' L '+xT+' '+yPT+
-      ' L '+xT+' '+(yCT+R)+' Z';
+      ' L '+xT+' '+yPT+' L '+xT+' '+yTT+
+      ' L '+(xT+_caDA-_pbsA)+' '+(yCT+_pbcA)+' Z';
   }
 
   if(bt==='cierre-automatico'){
     // Same top as doble-solapa, bottom is a straight cut at yPB (no flaps, no cierre)
-    return'M '+xF+' '+(yCT+R)+
-      ' A '+R+' '+R+' 0 0 1 '+(xF+R)+' '+yCT+
-      ' L '+(xD-R)+' '+yCT+
-      ' A '+R+' '+R+' 0 0 1 '+xD+' '+(yCT+R)+
+    var _caDA=(yTT-yCT)*Math.tan(S.cierreAngle*Math.PI/180);
+    var _sinA=Math.sin(S.cierreAngle*Math.PI/180),_cosA=Math.cos(S.cierreAngle*Math.PI/180);
+    var _pbA=(_cosA>0.001)?R*(1-_sinA)/_cosA:R,_pbsA=_pbA*_sinA,_pbcA=_pbA*_cosA;
+    return'M '+(xF+_caDA-_pbsA)+' '+(yCT+_pbcA)+
+      ' A '+R+' '+R+' 0 0 1 '+(xF+_caDA+_pbA)+' '+yCT+
+      ' L '+(xD-_caDA-_pbA)+' '+yCT+
+      ' A '+R+' '+R+' 0 0 1 '+(xD-_caDA+_pbsA)+' '+(yCT+_pbcA)+
       ' L '+xD+' '+yTT+' L '+xD+' '+yPT+
       ' L '+(trX+5/Math.SQRT2)+' '+(yPT-5/Math.SQRT2)+
       ' L '+(trX+5/Math.SQRT2)+' '+(yPT-TH)+' L '+trEnd+' '+(yPT-TH)+
@@ -498,14 +505,17 @@ function contourPath(g,bt,origBt){
       ' L '+tlTip+' '+(yPT-TH)+' L '+(tlX2-5/Math.SQRT2)+' '+(yPT-TH)+
       ' L '+(tlX2-5/Math.SQRT2)+' '+(yPT-5/Math.SQRT2)+
       ' L '+tlX2+' '+yPT+' L '+xF+' '+yTT+
-      (origBt==='cierre-semi-automatico'?' L '+xF+' '+(yCT+R):' Z');
+      (origBt==='cierre-semi-automatico'?' L '+(xF+_caDA-_pbsA)+' '+(yCT+_pbcA):' Z');
   }
 
   // doble-solapa (default): top+bottom cierre above/below FRONTAL (xF→xD)
-  return'M '+xF+' '+(yCT+R)+
-    ' A '+R+' '+R+' 0 0 1 '+(xF+R)+' '+yCT+
-    ' L '+(xD-R)+' '+yCT+
-    ' A '+R+' '+R+' 0 0 1 '+xD+' '+(yCT+R)+
+  var _caDp=(yTT-yCT)*Math.tan(S.cierreAngle*Math.PI/180);
+  var _sinCP=Math.sin(S.cierreAngle*Math.PI/180),_cosCP=Math.cos(S.cierreAngle*Math.PI/180);
+  var _pbP=(_cosCP>0.001)?R*(1-_sinCP)/_cosCP:R,_pbsP=_pbP*_sinCP,_pbcP=_pbP*_cosCP;
+  return'M '+(xF+_caDp-_pbsP)+' '+(yCT+_pbcP)+
+    ' A '+R+' '+R+' 0 0 1 '+(xF+_caDp+_pbP)+' '+yCT+
+    ' L '+(xD-_caDp-_pbP)+' '+yCT+
+    ' A '+R+' '+R+' 0 0 1 '+(xD-_caDp+_pbsP)+' '+(yCT+_pbcP)+
     ' L '+xD+' '+yTT+' L '+xD+' '+yPT+
     ' L '+(trX+5/Math.SQRT2)+' '+(yPT-5/Math.SQRT2)+
     ' L '+(trX+5/Math.SQRT2)+' '+(yPT-TH)+' L '+trEnd+' '+(yPT-TH)+
@@ -515,10 +525,10 @@ function contourPath(g,bt,origBt){
     ' L '+brEnd+' '+(yPB+TH)+' L '+(brX+5/Math.SQRT2)+' '+(yPB+TH)+
     ' L '+(brX+5/Math.SQRT2)+' '+(yPB+5/Math.SQRT2)+
     ' L '+xD+' '+yPB+' L '+xD+' '+yBB+
-    ' L '+xD+' '+(yCB-R)+
-    ' A '+R+' '+R+' 0 0 1 '+(xD-R)+' '+yCB+
-    ' L '+(xF+R)+' '+yCB+
-    ' A '+R+' '+R+' 0 0 1 '+xF+' '+(yCB-R)+
+    ' L '+(xD-_caDp+_pbsP)+' '+(yCB-_pbcP)+
+    ' A '+R+' '+R+' 0 0 1 '+(xD-_caDp-_pbP)+' '+yCB+
+    ' L '+(xF+_caDp+_pbP)+' '+yCB+
+    ' A '+R+' '+R+' 0 0 1 '+(xF+_caDp-_pbsP)+' '+(yCB-_pbcP)+
     ' L '+xF+' '+yBB+' L '+xF+' '+yPB+
     ' L '+(blX2-5/Math.SQRT2)+' '+(yPB+5/Math.SQRT2)+
     ' L '+(blX2-5/Math.SQRT2)+' '+(yPB+TH)+' L '+blTip+' '+(yPB+TH)+
@@ -538,9 +548,12 @@ function vertsForBase(g,bt){
   if(bt==='cierre-semi-automatico'){
     // Solo vértices del contorno activo (top + perímetro hasta yPB)
     // Se irán agregando los del fondo conforme se construye la geometría
+    var _caDcsa=(g.yTT-g.yCT)*Math.tan(S.cierreAngle*Math.PI/180);
+    var _sinVcsa=Math.sin(S.cierreAngle*Math.PI/180),_cosVcsa=Math.cos(S.cierreAngle*Math.PI/180);
+    var _pbVcsa=(_cosVcsa>0.001)?g.R*(1-_sinVcsa)/_cosVcsa:g.R,_pbsVcsa=_pbVcsa*_sinVcsa,_pbcVcsa=_pbVcsa*_cosVcsa;
     return[
-      [g.xF,g.yCT+g.R],[g.xF+g.R,g.yCT],
-      [g.xD-g.R,g.yCT],[g.xD,g.yCT+g.R],
+      [g.xF+_caDcsa-_pbsVcsa,g.yCT+_pbcVcsa],[g.xF+_caDcsa+_pbVcsa,g.yCT],
+      [g.xD-_caDcsa-_pbVcsa,g.yCT],[g.xD-_caDcsa+_pbsVcsa,g.yCT+_pbcVcsa],
       [g.xD,g.yTT],
       [g.xD-g.TAL-g.LK,g.yTT],[g.xD-g.TAL-g.LK,g.yTT+2],
       [g.xD,g.yPT],
@@ -581,9 +594,12 @@ function vertsForBase(g,bt){
     ];
   }
   if(bt==='doble-solapa-alt'){
+    var _caDalt=(g.yTT-g.yCT)*Math.tan(S.cierreAngle*Math.PI/180);
+    var _sinValt=Math.sin(S.cierreAngle*Math.PI/180),_cosValt=Math.cos(S.cierreAngle*Math.PI/180);
+    var _pbValt=(_cosValt>0.001)?g.R*(1-_sinValt)/_cosValt:g.R,_pbsValt=_pbValt*_sinValt,_pbcValt=_pbValt*_cosValt;
     return[
-      [g.xT,g.yCT+g.R],[g.xT+g.R,g.yCT],
-      [g.xI-g.R,g.yCT],[g.xI,g.yCT+g.R],
+      [g.xT+_caDalt-_pbsValt,g.yCT+_pbcValt],[g.xT+_caDalt+_pbValt,g.yCT],
+      [g.xI-_caDalt-_pbValt,g.yCT],[g.xI-_caDalt+_pbsValt,g.yCT+_pbcValt],
       [g.xI,g.yTT],
       [g.xI-g.TAL-g.LK,g.yTT],[g.xI-g.TAL-g.LK,g.yTT+2],
       [g.xI,g.yPT],
@@ -599,8 +615,8 @@ function vertsForBase(g,bt){
       [g.xD,g.yPB],
       [g.xD,g.yBB],
       [g.xD-g.TAL-g.LK,g.yBB],[g.xD-g.TAL-g.LK,g.yBB-2],
-      [g.xD,g.yCB-g.R],[g.xD-g.R,g.yCB],
-      [g.xF+g.R,g.yCB],[g.xF,g.yCB-g.R],
+      [g.xD-_caDalt+_pbsValt,g.yCB-_pbcValt],[g.xD-_caDalt-_pbValt,g.yCB],
+      [g.xF+_caDalt+_pbValt,g.yCB],[g.xF+_caDalt-_pbsValt,g.yCB-_pbcValt],
       [g.xF,g.yBB],
       [g.xF+g.TAL+g.LK,g.yBB],[g.xF+g.TAL+g.LK,g.yBB-2],
       [g.xF,g.yPB],
@@ -614,9 +630,12 @@ function vertsForBase(g,bt){
     ];
   }
   if(bt==='cierre-automatico'){
+    var _caDca=(g.yTT-g.yCT)*Math.tan(S.cierreAngle*Math.PI/180);
+    var _sinVca=Math.sin(S.cierreAngle*Math.PI/180),_cosVca=Math.cos(S.cierreAngle*Math.PI/180);
+    var _pbVca=(_cosVca>0.001)?g.R*(1-_sinVca)/_cosVca:g.R,_pbsVca=_pbVca*_sinVca,_pbcVca=_pbVca*_cosVca;
     return[
-      [g.xF,g.yCT+g.R],[g.xF+g.R,g.yCT],
-      [g.xD-g.R,g.yCT],[g.xD,g.yCT+g.R],
+      [g.xF+_caDca-_pbsVca,g.yCT+_pbcVca],[g.xF+_caDca+_pbVca,g.yCT],
+      [g.xD-_caDca-_pbVca,g.yCT],[g.xD-_caDca+_pbsVca,g.yCT+_pbcVca],
       [g.xD,g.yTT],
       [g.xD-g.TAL-g.LK,g.yTT],[g.xD-g.TAL-g.LK,g.yTT+2],
       [g.xD,g.yPT],
@@ -662,20 +681,23 @@ function vertsForBase(g,bt){
     ];
   }
   // doble-solapa
+  var _caD=(g.yTT-g.yCT)*Math.tan(S.cierreAngle*Math.PI/180);
+  var _sinV=Math.sin(S.cierreAngle*Math.PI/180),_cosV=Math.cos(S.cierreAngle*Math.PI/180);
+  var _pbV=(_cosV>0.001)?g.R*(1-_sinV)/_cosV:g.R,_pbsV=_pbV*_sinV,_pbcV=_pbV*_cosV;
   return[
-    [g.xF,g.yCT+g.R],[g.xF+g.R,g.yCT],
-    [g.xD-g.R,g.yCT],[g.xD,g.yCT+g.R],
-    [g.xD,g.yTT],
+    [g.xF+_caD-_pbsV,g.yCT+_pbcV],[g.xF+_caD+_pbV,g.yCT],          // 1-2  TL round (tangente)
+    [g.xD-_caD-_pbV,g.yCT],[g.xD-_caD+_pbsV,g.yCT+_pbcV],          // 3-4  TR round (tangente)
+    [g.xD,g.yTT],                                                     // 5  pivot der
     [g.xD-g.TAL-g.LK,g.yTT],[g.xD-g.TAL-g.LK,g.yTT+2],
     [g.xD,g.yPT],
     [g.xD+5/Math.SQRT2,g.yPT-5/Math.SQRT2],[g.xD+5/Math.SQRT2,g.yPT-g.TH],[g.xD+g.A-g.TI,g.yPT-g.TH],[g.xDR,g.yPT-g.TAL],[g.xDR,g.yPT],
     [g.xDR,g.yPB],[g.xDR,g.yPB+g.TAL],
     [g.xD+g.A-g.TI,g.yPB+g.TH],[g.xD+5/Math.SQRT2,g.yPB+g.TH],[g.xD+5/Math.SQRT2,g.yPB+5/Math.SQRT2],
     [g.xD,g.yPB],
-    [g.xD,g.yBB],
+    [g.xD,g.yBB],                                                     // pivot der inferior
     [g.xD-g.TAL-g.LK,g.yBB],[g.xD-g.TAL-g.LK,g.yBB-2],
-    [g.xD,g.yCB-g.R],[g.xD-g.R,g.yCB],
-    [g.xF+g.R,g.yCB],[g.xF,g.yCB-g.R],
+    [g.xD-_caD+_pbsV,g.yCB-_pbcV],[g.xD-_caD-_pbV,g.yCB],          // 21-22  BR round (tangente)
+    [g.xF+_caD+_pbV,g.yCB],[g.xF+_caD-_pbsV,g.yCB-_pbcV],          // 23-24  BL round (tangente)
     [g.xF,g.yBB],
     [g.xF+g.TAL+g.LK,g.yBB],[g.xF+g.TAL+g.LK,g.yBB-2],
     [g.xF,g.yPB],
@@ -723,10 +745,13 @@ function vertsForCandado(g,bt){
   var cx=g.xF+g.L/2; // centro horizontal del panel frontal
 
   if(bt==='doble-solapa'){
+    var _caDv=(g.yTT-g.yCT)*Math.tan(S.cierreAngle*Math.PI/180);
+    var _sinVc=Math.sin(S.cierreAngle*Math.PI/180),_cosVc=Math.cos(S.cierreAngle*Math.PI/180);
+    var _pbVc=(_cosVc>0.001)?g.R*(1-_sinVc)/_cosVc:g.R,_pbsVc=_pbVc*_sinVc,_pbcVc=_pbVc*_cosVc;
     return[
       // ── Cierre SUP (xF→xD, yCT→yTT) ──
-      [g.xF,g.yCT+g.R],[g.xF+g.R,g.yCT],                           // 1-2  TL round
-      [g.xD-g.R,g.yCT],[g.xD,g.yCT+g.R],                           // 3-4  TR round
+      [g.xF+_caDv-_pbsVc,g.yCT+_pbcVc],[g.xF+_caDv+_pbVc,g.yCT],  // 1-2  TL round (tangente)
+      [g.xD-_caDv-_pbVc,g.yCT],[g.xD-_caDv+_pbsVc,g.yCT+_pbcVc],  // 3-4  TR round (tangente)
       [g.xD,g.yTT],                                                  // 5
       [g.xD-g.TAL-g.LK,g.yTT],[g.xD-g.TAL-g.LK,g.yTT+2],          // 6-7  L-tab right
       [g.xD,g.yPT],                                                  // 8
@@ -737,8 +762,8 @@ function vertsForCandado(g,bt){
       // ── Cierre INF (xF→xD, yBB→yCB) ──
       [g.xD,g.yBB],                                                  // 18
       [g.xD-g.TAL-g.LK,g.yBB],[g.xD-g.TAL-g.LK,g.yBB-2],          // 19-20 L-tab right
-      [g.xD,g.yCB-g.R],[g.xD-g.R,g.yCB],                           // 21-22
-      [g.xF+g.R,g.yCB],[g.xF,g.yCB-g.R],                           // 23-24
+      [g.xD-_caDv+_pbsVc,g.yCB-_pbcVc],[g.xD-_caDv-_pbVc,g.yCB],   // 21-22  BR round (tangente)
+      [g.xF+_caDv+_pbVc,g.yCB],[g.xF+_caDv-_pbsVc,g.yCB-_pbcVc],  // 23-24  BL round (tangente)
       [g.xF,g.yBB],                                                  // 25
       [g.xF+g.TAL+g.LK,g.yBB],[g.xF+g.TAL+g.LK,g.yBB-2],          // 26-27 L-tab left
       [g.xF,g.yPB],                                                  // 28
@@ -794,9 +819,12 @@ function vertsForCandado(g,bt){
   }
 
   if(bt==='doble-solapa-alt'){
+    var _caDalt=(g.yTT-g.yCT)*Math.tan(S.cierreAngle*Math.PI/180);
+    var _sinValt=Math.sin(S.cierreAngle*Math.PI/180),_cosValt=Math.cos(S.cierreAngle*Math.PI/180);
+    var _pbValt=(_cosValt>0.001)?g.R*(1-_sinValt)/_cosValt:g.R,_pbsValt=_pbValt*_sinValt,_pbcValt=_pbValt*_cosValt;
     return[
-      [g.xT,g.yCT+g.R],[g.xT+g.R,g.yCT],                              // 1-2
-      [g.xI-g.R,g.yCT],[g.xI,g.yCT+g.R],                              // 3-4
+      [g.xT+_caDalt-_pbsValt,g.yCT+_pbcValt],[g.xT+_caDalt+_pbValt,g.yCT],  // 1-2
+      [g.xI-_caDalt-_pbValt,g.yCT],[g.xI-_caDalt+_pbsValt,g.yCT+_pbcValt],  // 3-4
       [g.xI,g.yTT],                                                     // 5
       [g.xI-g.TAL-g.LK,g.yTT],[g.xI-g.TAL-g.LK,g.yTT+2],             // 6-7
       [g.xI,g.yPT],                                                     // 8
@@ -812,8 +840,8 @@ function vertsForCandado(g,bt){
       [g.xD,g.yPB],                                                     // 22
       [g.xD,g.yBB],                                                     // 23
       [g.xD-g.TAL-g.LK,g.yBB],[g.xD-g.TAL-g.LK,g.yBB-2],             // 24-25
-      [g.xD,g.yCB-g.R],[g.xD-g.R,g.yCB],                              // 26-27
-      [g.xF+g.R,g.yCB],[g.xF,g.yCB-g.R],                              // 28-29
+      [g.xD-_caDalt+_pbsValt,g.yCB-_pbcValt],[g.xD-_caDalt-_pbValt,g.yCB],  // 26-27
+      [g.xF+_caDalt+_pbValt,g.yCB],[g.xF+_caDalt-_pbsValt,g.yCB-_pbcValt],  // 28-29
       [g.xF,g.yBB],                                                     // 30
       [g.xF+g.TAL+g.LK,g.yBB],[g.xF+g.TAL+g.LK,g.yBB-2],             // 31-32
       [g.xF,g.yPB],                                                     // 33
@@ -863,9 +891,12 @@ function vertsForCandado(g,bt){
     ];
   }
   if(bt==='cierre-automatico'){
+    var _caDca=(g.yTT-g.yCT)*Math.tan(S.cierreAngle*Math.PI/180);
+    var _sinVca=Math.sin(S.cierreAngle*Math.PI/180),_cosVca=Math.cos(S.cierreAngle*Math.PI/180);
+    var _pbVca=(_cosVca>0.001)?g.R*(1-_sinVca)/_cosVca:g.R,_pbsVca=_pbVca*_sinVca,_pbcVca=_pbVca*_cosVca;
     return[
-      [g.xF,g.yCT+g.R],[g.xF+g.R,g.yCT],                              // 1-2
-      [g.xD-g.R,g.yCT],[g.xD,g.yCT+g.R],                              // 3-4
+      [g.xF+_caDca-_pbsVca,g.yCT+_pbcVca],[g.xF+_caDca+_pbVca,g.yCT],  // 1-2
+      [g.xD-_caDca-_pbVca,g.yCT],[g.xD-_caDca+_pbsVca,g.yCT+_pbcVca],  // 3-4
       [g.xD,g.yTT],                                                     // 5
       [g.xD-g.TAL-g.LK,g.yTT],[g.xD-g.TAL-g.LK,g.yTT+2],             // 6-7
       [g.xD,g.yPT],                                                     // 8
@@ -946,10 +977,13 @@ function contourPathCandado(g,bt,origBt){
     var blTip=xI+TI,blEnd=xI+A-TI,blTal=xI;
     var brTip=xD+TI,brEnd=xD+A-TI,brTal=xDR;
     var g1=xT+L/2-S.lockW/2, g2=xT+L/2+S.lockW/2; // extremos del gap, centrados
-    return'M '+xF+' '+(yCT+R)+
-      ' A '+R+' '+R+' 0 0 1 '+(xF+R)+' '+yCT+
-      ' L '+(xD-R)+' '+yCT+
-      ' A '+R+' '+R+' 0 0 1 '+xD+' '+(yCT+R)+
+    var _caDc=(yTT-yCT)*Math.tan(S.cierreAngle*Math.PI/180);
+    var _sinCC=Math.sin(S.cierreAngle*Math.PI/180),_cosCC=Math.cos(S.cierreAngle*Math.PI/180);
+    var _pbC=(_cosCC>0.001)?R*(1-_sinCC)/_cosCC:R,_pbsC=_pbC*_sinCC,_pbcC=_pbC*_cosCC;
+    return'M '+(xF+_caDc-_pbsC)+' '+(yCT+_pbcC)+
+      ' A '+R+' '+R+' 0 0 1 '+(xF+_caDc+_pbC)+' '+yCT+
+      ' L '+(xD-_caDc-_pbC)+' '+yCT+
+      ' A '+R+' '+R+' 0 0 1 '+(xD-_caDc+_pbsC)+' '+(yCT+_pbcC)+
       ' L '+xD+' '+yTT+' L '+xD+' '+yPT+
       ' L '+(xD+5/Math.SQRT2)+' '+(yPT-5/Math.SQRT2)+
       ' L '+(xD+5/Math.SQRT2)+' '+(yPT-TH)+' L '+trEnd+' '+(yPT-TH)+
@@ -959,10 +993,10 @@ function contourPathCandado(g,bt,origBt){
       ' L '+brEnd+' '+(yPB+TH)+' L '+(xD+5/Math.SQRT2)+' '+(yPB+TH)+
       ' L '+(xD+5/Math.SQRT2)+' '+(yPB+5/Math.SQRT2)+
       ' L '+xD+' '+yPB+' L '+xD+' '+yBB+
-      ' L '+xD+' '+(yCB-R)+
-      ' A '+R+' '+R+' 0 0 1 '+(xD-R)+' '+yCB+
-      ' L '+(xF+R)+' '+yCB+
-      ' A '+R+' '+R+' 0 0 1 '+xF+' '+(yCB-R)+
+      ' L '+(xD-_caDc+_pbsC)+' '+(yCB-_pbcC)+
+      ' A '+R+' '+R+' 0 0 1 '+(xD-_caDc-_pbC)+' '+yCB+
+      ' L '+(xF+_caDc+_pbC)+' '+yCB+
+      ' A '+R+' '+R+' 0 0 1 '+(xF+_caDc-_pbsC)+' '+(yCB-_pbcC)+
       ' L '+xF+' '+yBB+' L '+xF+' '+yPB+
       ' L '+(xF-5/Math.SQRT2)+' '+(yPB+5/Math.SQRT2)+
       ' L '+(xF-5/Math.SQRT2)+' '+(yPB+TH)+' L '+blTip+' '+(yPB+TH)+
@@ -975,7 +1009,7 @@ function contourPathCandado(g,bt,origBt){
       ' L '+tlTal+' '+(yPT-TAL)+
       ' L '+tlTip+' '+(yPT-TH)+' L '+(tlX2-5/Math.SQRT2)+' '+(yPT-TH)+
       ' L '+(tlX2-5/Math.SQRT2)+' '+(yPT-5/Math.SQRT2)+
-      ' L '+tlX2+' '+yPT+' L '+xF+' '+yTT+' L '+xF+' '+(yCT+R); // cierre explícito, no Z
+      ' L '+tlX2+' '+yPT+' L '+xF+' '+yTT+' L '+(xF+_caDc-_pbsC)+' '+(yCT+_pbcC); // cierre explícito, no Z
   }
   if(bt==='cierre-automatico'){
     var xF=g.xF,xD=g.xD,xDR=g.xDR,xI=g.xI,xT=g.xT,xPL=g.xPL;
@@ -984,10 +1018,13 @@ function contourPathCandado(g,bt,origBt){
     var tlTip=xI+TI,tlEnd=xI+A-TI,tlTal=xI,tlX2=xF;
     var trTip=xD+TI,trEnd=xD+A-TI,trTal=xDR;
     var g1=xT+L/2-S.lockW/2, g2=xT+L/2+S.lockW/2;
-    return'M '+xF+' '+(yCT+R)+
-      ' A '+R+' '+R+' 0 0 1 '+(xF+R)+' '+yCT+
-      ' L '+(xD-R)+' '+yCT+
-      ' A '+R+' '+R+' 0 0 1 '+xD+' '+(yCT+R)+
+    var _caDAc=(yTT-yCT)*Math.tan(S.cierreAngle*Math.PI/180);
+    var _sinAc=Math.sin(S.cierreAngle*Math.PI/180),_cosAc=Math.cos(S.cierreAngle*Math.PI/180);
+    var _pbAc=(_cosAc>0.001)?R*(1-_sinAc)/_cosAc:R,_pbsAc=_pbAc*_sinAc,_pbcAc=_pbAc*_cosAc;
+    return'M '+(xF+_caDAc-_pbsAc)+' '+(yCT+_pbcAc)+
+      ' A '+R+' '+R+' 0 0 1 '+(xF+_caDAc+_pbAc)+' '+yCT+
+      ' L '+(xD-_caDAc-_pbAc)+' '+yCT+
+      ' A '+R+' '+R+' 0 0 1 '+(xD-_caDAc+_pbsAc)+' '+(yCT+_pbcAc)+
       ' L '+xD+' '+yTT+' L '+xD+' '+yPT+
       ' L '+(xD+5/Math.SQRT2)+' '+(yPT-5/Math.SQRT2)+
       ' L '+(xD+5/Math.SQRT2)+' '+(yPT-TH)+' L '+trEnd+' '+(yPT-TH)+
@@ -1000,7 +1037,7 @@ function contourPathCandado(g,bt,origBt){
       ' L '+tlTal+' '+(yPT-TAL)+
       ' L '+tlTip+' '+(yPT-TH)+' L '+(tlX2-5/Math.SQRT2)+' '+(yPT-TH)+
       ' L '+(tlX2-5/Math.SQRT2)+' '+(yPT-5/Math.SQRT2)+
-      ' L '+tlX2+' '+yPT+' L '+xF+' '+yTT+' L '+xF+' '+(yCT+R); // cierre explícito, no Z
+      ' L '+tlX2+' '+yPT+' L '+xF+' '+yTT+' L '+(xF+_caDAc-_pbsAc)+' '+(yCT+_pbcAc); // cierre explícito, no Z
   }
   if(bt==='doble-solapa-alt'){
     var xF=g.xF,xD=g.xD,xDR=g.xDR,xI=g.xI,xT=g.xT,xPL=g.xPL;
@@ -1011,10 +1048,13 @@ function contourPathCandado(g,bt,origBt){
     var brTip=xD+TI,brEnd=xD+A-TI,brTal=xDR;
     var g1t=xF+L/2-S.lockW/2, g2t=xF+L/2+S.lockW/2; // gap top (FRONTAL)
     var g1b=xT+L/2-S.lockW/2, g2b=xT+L/2+S.lockW/2; // gap bottom (TRASERO)
-    return'M '+xT+' '+(yCT+R)+
-      ' A '+R+' '+R+' 0 0 1 '+(xT+R)+' '+yCT+
-      ' L '+(xI-R)+' '+yCT+
-      ' A '+R+' '+R+' 0 0 1 '+xI+' '+(yCT+R)+
+    var _caDAlt=(yTT-yCT)*Math.tan(S.cierreAngle*Math.PI/180);
+    var _sinAlt=Math.sin(S.cierreAngle*Math.PI/180),_cosAlt=Math.cos(S.cierreAngle*Math.PI/180);
+    var _pbAlt=(_cosAlt>0.001)?R*(1-_sinAlt)/_cosAlt:R,_pbsAlt=_pbAlt*_sinAlt,_pbcAlt=_pbAlt*_cosAlt;
+    return'M '+(xT+_caDAlt-_pbsAlt)+' '+(yCT+_pbcAlt)+
+      ' A '+R+' '+R+' 0 0 1 '+(xT+_caDAlt+_pbAlt)+' '+yCT+
+      ' L '+(xI-_caDAlt-_pbAlt)+' '+yCT+
+      ' A '+R+' '+R+' 0 0 1 '+(xI-_caDAlt+_pbsAlt)+' '+(yCT+_pbcAlt)+
       ' L '+xI+' '+yTT+' L '+xI+' '+yPT+
       ' L '+(xI+5/Math.SQRT2)+' '+(yPT-5/Math.SQRT2)+
       ' L '+(xI+5/Math.SQRT2)+' '+(yPT-TH)+' L '+tlEnd+' '+(yPT-TH)+
@@ -1029,10 +1069,10 @@ function contourPathCandado(g,bt,origBt){
       ' L '+brEnd+' '+(yPB+TH)+' L '+(xD+5/Math.SQRT2)+' '+(yPB+TH)+
       ' L '+(xD+5/Math.SQRT2)+' '+(yPB+5/Math.SQRT2)+
       ' L '+xD+' '+yPB+' L '+xD+' '+yBB+
-      ' L '+xD+' '+(yCB-R)+
-      ' A '+R+' '+R+' 0 0 1 '+(xD-R)+' '+yCB+
-      ' L '+(xF+R)+' '+yCB+
-      ' A '+R+' '+R+' 0 0 1 '+xF+' '+(yCB-R)+
+      ' L '+(xD-_caDAlt+_pbsAlt)+' '+(yCB-_pbcAlt)+
+      ' A '+R+' '+R+' 0 0 1 '+(xD-_caDAlt-_pbAlt)+' '+yCB+
+      ' L '+(xF+_caDAlt+_pbAlt)+' '+yCB+
+      ' A '+R+' '+R+' 0 0 1 '+(xF+_caDAlt-_pbsAlt)+' '+(yCB-_pbcAlt)+
       ' L '+xF+' '+yBB+' L '+xF+' '+yPB+
       ' L '+(xF-5/Math.SQRT2)+' '+(yPB+5/Math.SQRT2)+
       ' L '+(xF-5/Math.SQRT2)+' '+(yPB+TH)+' L '+blTip+' '+(yPB+TH)+
@@ -1040,8 +1080,8 @@ function contourPathCandado(g,bt,origBt){
       ' L '+xI+' '+yPB+' L '+g2b+' '+yPB+         // xI → g2b
       ' M '+g1b+' '+yPB+' L '+xT+' '+yPB+          // gap bottom, g1b → xT
       ' L '+xPL+' '+(yPB-g.PW)+' L '+xPL+' '+(yPT+g.PW)+
-      ' L '+xT+' '+yPT+
-      ' L '+xT+' '+(yCT+R); // cierre explícito, no Z
+      ' L '+xT+' '+yPT+' L '+xT+' '+yTT+
+      ' L '+(xT+_caDAlt-_pbsAlt)+' '+(yCT+_pbcAlt); // cierre explícito, no Z
   }
   return contourPath(g,bt); // fallback para otros tipos
 }
@@ -1049,7 +1089,7 @@ function contourPathCandado(g,bt,origBt){
 // Plano SVG completo para la versión candado.
 // Copia exacta de buildSVG() como punto de partida — se modifica vértice a vértice con Erick.
 function buildSVGCandado(g,id,opts){
-  var L=g.L,A=g.A,H=g.H,PW=g.PW,CH=g.CH,R=g.R,TH=g.TH,TAL=g.TAL,LK=g.LK;
+  var L=g.L,A=g.A,TA=g.TA,H=g.H,PW=g.PW,CH=g.CH,R=g.R,TH=g.TH,TAL=g.TAL,LK=g.LK;
   var xT=g.xT,xI=g.xI,xF=g.xF,xD=g.xD,xDR=g.xDR,xPL=g.xPL;
   var yPT=g.yPT,yPB=g.yPB,yTT=g.yTT,yCT=g.yCT,yBB=g.yBB,yCB=g.yCB;
   var vx=g.vx,vy=g.vy,vw=g.vw,vh=g.vh;
@@ -1086,22 +1126,30 @@ function buildSVGCandado(g,id,opts){
   s+='<rect x="'+xD+'" y="'+yPT+'" width="'+A+'" height="'+H+'" fill="'+fPrin+'"/>';
 
   if(bt==='doble-solapa-alt'){
-    s+='<rect x="'+xT+'" y="'+yTT+'" width="'+L+'" height="'+A+'" fill="'+fTapa+'"/>';
-    s+='<rect x="'+xF+'" y="'+yPB+'" width="'+L+'" height="'+A+'" fill="'+fTapa+'"/>';
+    s+='<rect x="'+xT+'" y="'+yTT+'" width="'+L+'" height="'+TA+'" fill="'+fTapa+'"/>';
+    s+='<rect x="'+xF+'" y="'+yPB+'" width="'+L+'" height="'+TA+'" fill="'+fTapa+'"/>';
     if(R>0){
-      s+='<path d="M '+xT+' '+(yCT+R)+' A '+R+' '+R+' 0 0 1 '+(xT+R)+' '+yCT+' L '+(xI-R)+' '+yCT+' A '+R+' '+R+' 0 0 1 '+xI+' '+(yCT+R)+' L '+xI+' '+yTT+' L '+xT+' '+yTT+' Z" fill="'+fCierre+'"/>';
+      var _cDA2=(yTT-yCT)*Math.tan(S.cierreAngle*Math.PI/180),_sDA2=Math.sin(S.cierreAngle*Math.PI/180),_cosDA2=Math.cos(S.cierreAngle*Math.PI/180);
+      var _pbDA2=(_cosDA2>0.001)?R*(1-_sDA2)/_cosDA2:R,_pbsDA2=_pbDA2*_sDA2,_pbcDA2=_pbDA2*_cosDA2;
+      s+='<path d="M '+(xT+_cDA2-_pbsDA2)+' '+(yCT+_pbcDA2)+' A '+R+' '+R+' 0 0 1 '+(xT+_cDA2+_pbDA2)+' '+yCT+' L '+(xI-_cDA2-_pbDA2)+' '+yCT+' A '+R+' '+R+' 0 0 1 '+(xI-_cDA2+_pbsDA2)+' '+(yCT+_pbcDA2)+' L '+xI+' '+yTT+' L '+xT+' '+yTT+' Z" fill="'+fCierre+'"/>';
     } else {
       s+='<rect x="'+xT+'" y="'+yCT+'" width="'+L+'" height="'+(yTT-yCT)+'" fill="'+fCierre+'"/>';
     }
     if(R>0){
-      s+='<path d="M '+xF+' '+yBB+' L '+xD+' '+yBB+' L '+xD+' '+(yCB-R)+' A '+R+' '+R+' 0 0 1 '+(xD-R)+' '+yCB+' L '+(xF+R)+' '+yCB+' A '+R+' '+R+' 0 0 1 '+xF+' '+(yCB-R)+' Z" fill="'+fCierre+'"/>';
+      var _cierreDbot=(bt==='doble-solapa'||bt==='doble-solapa-alt')?(yCB-yBB)*Math.tan(S.cierreAngle*Math.PI/180):0;
+        var _sinCFb=(bt==='doble-solapa'||bt==='doble-solapa-alt')?Math.sin(S.cierreAngle*Math.PI/180):0,_cosCFb=(bt==='doble-solapa'||bt==='doble-solapa-alt')?Math.cos(S.cierreAngle*Math.PI/180):1;
+        var _pbCFb=(_cosCFb>0.001)?R*(1-_sinCFb)/_cosCFb:R,_pbsCFb=_pbCFb*_sinCFb,_pbcCFb=_pbCFb*_cosCFb;
+        s+='<path d="M '+xF+' '+yBB+' L '+xD+' '+yBB+' L '+(xD-_cierreDbot+_pbsCFb)+' '+(yCB-_pbcCFb)+' A '+R+' '+R+' 0 0 1 '+(xD-_cierreDbot-_pbCFb)+' '+yCB+' L '+(xF+_cierreDbot+_pbCFb)+' '+yCB+' A '+R+' '+R+' 0 0 1 '+(xF+_cierreDbot-_pbsCFb)+' '+(yCB-_pbcCFb)+' Z" fill="'+fCierre+'"/>';
     } else {
       s+='<rect x="'+xF+'" y="'+yBB+'" width="'+L+'" height="'+(yCB-yBB)+'" fill="'+fCierre+'"/>';
     }
   } else {
-    s+='<rect x="'+xF+'" y="'+yTT+'" width="'+L+'" height="'+A+'" fill="'+fTapa+'"/>';
+    s+='<rect x="'+xF+'" y="'+yTT+'" width="'+L+'" height="'+TA+'" fill="'+fTapa+'"/>';
     if(R>0){
-      s+='<path d="M '+xF+' '+(yCT+R)+' A '+R+' '+R+' 0 0 1 '+(xF+R)+' '+yCT+' L '+(xD-R)+' '+yCT+' A '+R+' '+R+' 0 0 1 '+xD+' '+(yCT+R)+' L '+xD+' '+yTT+' L '+xF+' '+yTT+' Z" fill="'+fCierre+'"/>';
+      var _cierreD=(bt==='doble-solapa'||bt==='cierre-automatico')?(yTT-yCT)*Math.tan(S.cierreAngle*Math.PI/180):0;
+      var _sinCF=(bt==='doble-solapa'||bt==='cierre-automatico')?Math.sin(S.cierreAngle*Math.PI/180):0,_cosCF=(bt==='doble-solapa'||bt==='cierre-automatico')?Math.cos(S.cierreAngle*Math.PI/180):1;
+      var _pbCF=(_cosCF>0.001)?R*(1-_sinCF)/_cosCF:R,_pbsCF=_pbCF*_sinCF,_pbcCF=_pbCF*_cosCF;
+      s+='<path d="M '+(xF+_cierreD-_pbsCF)+' '+(yCT+_pbcCF)+' A '+R+' '+R+' 0 0 1 '+(xF+_cierreD+_pbCF)+' '+yCT+' L '+(xD-_cierreD-_pbCF)+' '+yCT+' A '+R+' '+R+' 0 0 1 '+(xD-_cierreD+_pbsCF)+' '+(yCT+_pbcCF)+' L '+xD+' '+yTT+' L '+xF+' '+yTT+' Z" fill="'+fCierre+'"/>';
     } else {
       s+='<rect x="'+xF+'" y="'+yCT+'" width="'+L+'" height="'+(yTT-yCT)+'" fill="'+fCierre+'"/>';
     }
@@ -1186,9 +1234,12 @@ function buildSVGCandado(g,id,opts){
       s+='<polygon points="'+_f_v43x+','+_f_v43y+' '+_f_v44x+','+_f_v43y+' '+_f_htx2+','+_f_hty+' '+_f_htx1+','+_f_hty+'" fill="'+fCierre+'"/>';
     }
     if(bt!=='cierre-automatico'){
-      s+='<rect x="'+xF+'" y="'+yPB+'" width="'+L+'" height="'+A+'" fill="'+fTapa+'"/>';
+      s+='<rect x="'+xF+'" y="'+yPB+'" width="'+L+'" height="'+TA+'" fill="'+fTapa+'"/>';
       if(R>0){
-        s+='<path d="M '+xF+' '+yBB+' L '+xD+' '+yBB+' L '+xD+' '+(yCB-R)+' A '+R+' '+R+' 0 0 1 '+(xD-R)+' '+yCB+' L '+(xF+R)+' '+yCB+' A '+R+' '+R+' 0 0 1 '+xF+' '+(yCB-R)+' Z" fill="'+fCierre+'"/>';
+        var _cierreDbot=(bt==='doble-solapa'||bt==='doble-solapa-alt')?(yCB-yBB)*Math.tan(S.cierreAngle*Math.PI/180):0;
+        var _sinCFb=(bt==='doble-solapa'||bt==='doble-solapa-alt')?Math.sin(S.cierreAngle*Math.PI/180):0,_cosCFb=(bt==='doble-solapa'||bt==='doble-solapa-alt')?Math.cos(S.cierreAngle*Math.PI/180):1;
+        var _pbCFb=(_cosCFb>0.001)?R*(1-_sinCFb)/_cosCFb:R,_pbsCFb=_pbCFb*_sinCFb,_pbcCFb=_pbCFb*_cosCFb;
+        s+='<path d="M '+xF+' '+yBB+' L '+xD+' '+yBB+' L '+(xD-_cierreDbot+_pbsCFb)+' '+(yCB-_pbcCFb)+' A '+R+' '+R+' 0 0 1 '+(xD-_cierreDbot-_pbCFb)+' '+yCB+' L '+(xF+_cierreDbot+_pbCFb)+' '+yCB+' A '+R+' '+R+' 0 0 1 '+(xF+_cierreDbot-_pbsCFb)+' '+(yCB-_pbcCFb)+' Z" fill="'+fCierre+'"/>';
       } else {
         s+='<rect x="'+xF+'" y="'+yBB+'" width="'+L+'" height="'+(yCB-yBB)+'" fill="'+fCierre+'"/>';
       }
@@ -1636,7 +1687,7 @@ function buildSVGCandado(g,id,opts){
     var dimTxt=L+' x '+H+' mm';
     var fs1m=fsFor(L,'TRASERO',H),fs2m=fsFor(L,dimTxt,H);
     var fs1s=fsFor(A,'IZQUIERDO',H),fs2s=fsFor(A,A+' x '+H+' mm',H);
-    var fs1t=fsFor(L,'TAPA',A),fs2t=fsFor(L,L+' x '+A,A);
+    var fs1t=fsFor(L,'TAPA',TA),fs2t=fsFor(L,L+' x '+A,TA);
     function fsCierre(txt){return Math.max(0.8,Math.min(L/(txt.length*0.62),CH*0.72,fs1m));}
     function cierreLabel(cx,cy,txt){var fs=fsCierre(txt);s+='<text x="'+cx+'" y="'+(cy+fs*0.38)+'" font-size="'+fs+'" fill="'+tc.labelMain+'" text-anchor="middle" font-family="\'Geist Mono\',monospace">'+txt+'</text>';}
     var my1=(yPT+yPB)/2-Math.max(fs1m,fs2m)*0.55,my2=(yPT+yPB)/2+Math.max(fs1m,fs2m)*0.55;
@@ -1645,20 +1696,20 @@ function buildSVGCandado(g,id,opts){
     plbl(xF+L/2,my1,my2,'FRONTAL',dimTxt,tc.labelMain,tc.labelSub,fs1m,fs2m);
     plbl(xD+A/2,my1,my2,'DERECHO',A+' x '+H+' mm',tc.labelMain,tc.labelSub,fs1s,fs2s);
     if(bt==='doble-solapa-alt'){
-      var ty1=yTT+A/2-fs1t*0.55,ty2=yTT+A/2+fs2t*0.55;
+      var ty1=yTT+TA/2-fs1t*0.55,ty2=yTT+TA/2+fs2t*0.55;
       plbl(xT+L/2,ty1,ty2,'TAPA',L+' x '+A,tc.labelMain,tc.labelMain,fs1t,fs2t);
-      var by1=yPB+A/2-fs1t*0.55,by2=yPB+A/2+fs2t*0.55;
+      var by1=yPB+TA/2-fs1t*0.55,by2=yPB+TA/2+fs2t*0.55;
       plbl(xF+L/2,by1,by2,'BASE',L+' x '+A,tc.labelMain,tc.labelMain,fs1t,fs2t);
       cierreLabel(xT+L/2,yCT+CH/2,'CIERRE SUP');
       cierreLabel(xF+L/2,yBB+CH/2,'CIERRE INF');
     } else if(bt==='cierre-automatico'){
-      var ty1=yTT+A/2-fs1t*0.55,ty2=yTT+A/2+fs2t*0.55;
+      var ty1=yTT+TA/2-fs1t*0.55,ty2=yTT+TA/2+fs2t*0.55;
       plbl(xF+L/2,ty1,ty2,'TAPA',L+' x '+A,tc.labelMain,tc.labelMain,fs1t,fs2t);
       cierreLabel(xF+L/2,yCT+CH/2,'CIERRE SUP');
     } else {
-      var ty1=yTT+A/2-fs1t*0.55,ty2=yTT+A/2+fs2t*0.55;
+      var ty1=yTT+TA/2-fs1t*0.55,ty2=yTT+TA/2+fs2t*0.55;
       plbl(xF+L/2,ty1,ty2,'TAPA',L+' x '+A,tc.labelMain,tc.labelMain,fs1t,fs2t);
-      var by1=yPB+A/2-fs1t*0.55,by2=yPB+A/2+fs2t*0.55;
+      var by1=yPB+TA/2-fs1t*0.55,by2=yPB+TA/2+fs2t*0.55;
       plbl(xF+L/2,by1,by2,'BASE',L+' x '+A,tc.labelMain,tc.labelMain,fs1t,fs2t);
       cierreLabel(xF+L/2,yCT+CH/2,'CIERRE SUP');
       cierreLabel(xF+L/2,yBB+CH/2,'CIERRE INF');
@@ -1692,7 +1743,7 @@ function buildSVGCandado(g,id,opts){
 /* ═══════════════════ SVG BUILDER ═══════════════════ */
 function buildSVG(g,id,opts){
   if(S.candado) return buildSVGCandado(g,id,opts);
-  var L=g.L,A=g.A,H=g.H,PW=g.PW,CH=g.CH,R=g.R,TH=g.TH,TAL=g.TAL,LK=g.LK;
+  var L=g.L,A=g.A,TA=g.TA,H=g.H,PW=g.PW,CH=g.CH,R=g.R,TH=g.TH,TAL=g.TAL,LK=g.LK;
   var xT=g.xT,xI=g.xI,xF=g.xF,xD=g.xD,xDR=g.xDR,xPL=g.xPL;
   var yPT=g.yPT,yPB=g.yPB,yTT=g.yTT,yCT=g.yCT,yBB=g.yBB,yCB=g.yCB;
   var vx=g.vx,vy=g.vy,vw=g.vw,vh=g.vh;
@@ -1730,26 +1781,34 @@ function buildSVG(g,id,opts){
 
   if(bt==='doble-solapa-alt'){
     // Tapa+Base: above TRASERO / below FRONTAL respectively
-    s+='<rect x="'+xT+'" y="'+yTT+'" width="'+L+'" height="'+A+'" fill="'+fTapa+'"/>';
-    s+='<rect x="'+xF+'" y="'+yPB+'" width="'+L+'" height="'+A+'" fill="'+fTapa+'"/>';
+    s+='<rect x="'+xT+'" y="'+yTT+'" width="'+L+'" height="'+TA+'" fill="'+fTapa+'"/>';
+    s+='<rect x="'+xF+'" y="'+yPB+'" width="'+L+'" height="'+TA+'" fill="'+fTapa+'"/>';
     // Top cierre: rounded corners at top, above TRASERO (xT→xI)
     if(R>0){
-      s+='<path d="M '+xT+' '+(yCT+R)+' A '+R+' '+R+' 0 0 1 '+(xT+R)+' '+yCT+' L '+(xI-R)+' '+yCT+' A '+R+' '+R+' 0 0 1 '+xI+' '+(yCT+R)+' L '+xI+' '+yTT+' L '+xT+' '+yTT+' Z" fill="'+fCierre+'"/>';
+      var _cDA2=(yTT-yCT)*Math.tan(S.cierreAngle*Math.PI/180),_sDA2=Math.sin(S.cierreAngle*Math.PI/180),_cosDA2=Math.cos(S.cierreAngle*Math.PI/180);
+      var _pbDA2=(_cosDA2>0.001)?R*(1-_sDA2)/_cosDA2:R,_pbsDA2=_pbDA2*_sDA2,_pbcDA2=_pbDA2*_cosDA2;
+      s+='<path d="M '+(xT+_cDA2-_pbsDA2)+' '+(yCT+_pbcDA2)+' A '+R+' '+R+' 0 0 1 '+(xT+_cDA2+_pbDA2)+' '+yCT+' L '+(xI-_cDA2-_pbDA2)+' '+yCT+' A '+R+' '+R+' 0 0 1 '+(xI-_cDA2+_pbsDA2)+' '+(yCT+_pbcDA2)+' L '+xI+' '+yTT+' L '+xT+' '+yTT+' Z" fill="'+fCierre+'"/>';
     } else {
       s+='<rect x="'+xT+'" y="'+yCT+'" width="'+L+'" height="'+(yTT-yCT)+'" fill="'+fCierre+'"/>';
     }
     // Bottom cierre: rounded corners at bottom, below FRONTAL (xF→xD) — same as regular
     if(R>0){
-      s+='<path d="M '+xF+' '+yBB+' L '+xD+' '+yBB+' L '+xD+' '+(yCB-R)+' A '+R+' '+R+' 0 0 1 '+(xD-R)+' '+yCB+' L '+(xF+R)+' '+yCB+' A '+R+' '+R+' 0 0 1 '+xF+' '+(yCB-R)+' Z" fill="'+fCierre+'"/>';
+      var _cierreDbot=(bt==='doble-solapa'||bt==='doble-solapa-alt')?(yCB-yBB)*Math.tan(S.cierreAngle*Math.PI/180):0;
+        var _sinCFb=(bt==='doble-solapa'||bt==='doble-solapa-alt')?Math.sin(S.cierreAngle*Math.PI/180):0,_cosCFb=(bt==='doble-solapa'||bt==='doble-solapa-alt')?Math.cos(S.cierreAngle*Math.PI/180):1;
+        var _pbCFb=(_cosCFb>0.001)?R*(1-_sinCFb)/_cosCFb:R,_pbsCFb=_pbCFb*_sinCFb,_pbcCFb=_pbCFb*_cosCFb;
+        s+='<path d="M '+xF+' '+yBB+' L '+xD+' '+yBB+' L '+(xD-_cierreDbot+_pbsCFb)+' '+(yCB-_pbcCFb)+' A '+R+' '+R+' 0 0 1 '+(xD-_cierreDbot-_pbCFb)+' '+yCB+' L '+(xF+_cierreDbot+_pbCFb)+' '+yCB+' A '+R+' '+R+' 0 0 1 '+(xF+_cierreDbot-_pbsCFb)+' '+(yCB-_pbcCFb)+' Z" fill="'+fCierre+'"/>';
     } else {
       s+='<rect x="'+xF+'" y="'+yBB+'" width="'+L+'" height="'+(yCB-yBB)+'" fill="'+fCierre+'"/>';
     }
   } else {
     // doble-solapa + cierre-automatico: TAPA + top cierre on FRONTAL axis (xF→xD)
-    s+='<rect x="'+xF+'" y="'+yTT+'" width="'+L+'" height="'+A+'" fill="'+fTapa+'"/>';
+    s+='<rect x="'+xF+'" y="'+yTT+'" width="'+L+'" height="'+TA+'" fill="'+fTapa+'"/>';
     // Top cierre
     if(R>0){
-      s+='<path d="M '+xF+' '+(yCT+R)+' A '+R+' '+R+' 0 0 1 '+(xF+R)+' '+yCT+' L '+(xD-R)+' '+yCT+' A '+R+' '+R+' 0 0 1 '+xD+' '+(yCT+R)+' L '+xD+' '+yTT+' L '+xF+' '+yTT+' Z" fill="'+fCierre+'"/>';
+      var _cierreD=(bt==='doble-solapa'||bt==='cierre-automatico')?(yTT-yCT)*Math.tan(S.cierreAngle*Math.PI/180):0;
+      var _sinCF=(bt==='doble-solapa'||bt==='cierre-automatico')?Math.sin(S.cierreAngle*Math.PI/180):0,_cosCF=(bt==='doble-solapa'||bt==='cierre-automatico')?Math.cos(S.cierreAngle*Math.PI/180):1;
+      var _pbCF=(_cosCF>0.001)?R*(1-_sinCF)/_cosCF:R,_pbsCF=_pbCF*_sinCF,_pbcCF=_pbCF*_cosCF;
+      s+='<path d="M '+(xF+_cierreD-_pbsCF)+' '+(yCT+_pbcCF)+' A '+R+' '+R+' 0 0 1 '+(xF+_cierreD+_pbCF)+' '+yCT+' L '+(xD-_cierreD-_pbCF)+' '+yCT+' A '+R+' '+R+' 0 0 1 '+(xD-_cierreD+_pbsCF)+' '+(yCT+_pbcCF)+' L '+xD+' '+yTT+' L '+xF+' '+yTT+' Z" fill="'+fCierre+'"/>';
     } else {
       s+='<rect x="'+xF+'" y="'+yCT+'" width="'+L+'" height="'+(yTT-yCT)+'" fill="'+fCierre+'"/>';
     }
@@ -1841,9 +1900,12 @@ function buildSVG(g,id,opts){
     }
     // BASE + bottom cierre only for doble-solapa
     if(bt!=='cierre-automatico'){
-      s+='<rect x="'+xF+'" y="'+yPB+'" width="'+L+'" height="'+A+'" fill="'+fTapa+'"/>';
+      s+='<rect x="'+xF+'" y="'+yPB+'" width="'+L+'" height="'+TA+'" fill="'+fTapa+'"/>';
       if(R>0){
-        s+='<path d="M '+xF+' '+yBB+' L '+xD+' '+yBB+' L '+xD+' '+(yCB-R)+' A '+R+' '+R+' 0 0 1 '+(xD-R)+' '+yCB+' L '+(xF+R)+' '+yCB+' A '+R+' '+R+' 0 0 1 '+xF+' '+(yCB-R)+' Z" fill="'+fCierre+'"/>';
+        var _cierreDbot=(bt==='doble-solapa'||bt==='doble-solapa-alt')?(yCB-yBB)*Math.tan(S.cierreAngle*Math.PI/180):0;
+        var _sinCFb=(bt==='doble-solapa'||bt==='doble-solapa-alt')?Math.sin(S.cierreAngle*Math.PI/180):0,_cosCFb=(bt==='doble-solapa'||bt==='doble-solapa-alt')?Math.cos(S.cierreAngle*Math.PI/180):1;
+        var _pbCFb=(_cosCFb>0.001)?R*(1-_sinCFb)/_cosCFb:R,_pbsCFb=_pbCFb*_sinCFb,_pbcCFb=_pbCFb*_cosCFb;
+        s+='<path d="M '+xF+' '+yBB+' L '+xD+' '+yBB+' L '+(xD-_cierreDbot+_pbsCFb)+' '+(yCB-_pbcCFb)+' A '+R+' '+R+' 0 0 1 '+(xD-_cierreDbot-_pbCFb)+' '+yCB+' L '+(xF+_cierreDbot+_pbCFb)+' '+yCB+' A '+R+' '+R+' 0 0 1 '+(xF+_cierreDbot-_pbsCFb)+' '+(yCB-_pbcCFb)+' Z" fill="'+fCierre+'"/>';
       } else {
         s+='<rect x="'+xF+'" y="'+yBB+'" width="'+L+'" height="'+(yCB-yBB)+'" fill="'+fCierre+'"/>';
       }
@@ -2128,7 +2190,7 @@ function buildSVG(g,id,opts){
     var dimTxt=L+' x '+H+' mm';
     var fs1m=fsFor(L,'TRASERO',H),fs2m=fsFor(L,dimTxt,H);
     var fs1s=fsFor(A,'IZQUIERDO',H),fs2s=fsFor(A,A+' x '+H+' mm',H);
-    var fs1t=fsFor(L,'TAPA',A),fs2t=fsFor(L,L+' x '+A,A);
+    var fs1t=fsFor(L,'TAPA',TA),fs2t=fsFor(L,L+' x '+A,TA);
     // Cierre labels: una sola línea, máx ancho=L, máx alto=CH, sin superar fs1m
     function fsCierre(txt){return Math.max(0.8,Math.min(L/(txt.length*0.62),CH*0.72,fs1m));}
     function cierreLabel(cx,cy,txt){var fs=fsCierre(txt);s+='<text x="'+cx+'" y="'+(cy+fs*0.38)+'" font-size="'+fs+'" fill="'+tc.labelMain+'" text-anchor="middle" font-family="\'Geist Mono\',monospace">'+txt+'</text>';}
@@ -2138,20 +2200,20 @@ function buildSVG(g,id,opts){
     plbl(xF+L/2,my1,my2,'FRONTAL',dimTxt,tc.labelMain,tc.labelSub,fs1m,fs2m);
     plbl(xD+A/2,my1,my2,'DERECHO',A+' x '+H+' mm',tc.labelMain,tc.labelSub,fs1s,fs2s);
     if(bt==='doble-solapa-alt'){
-      var ty1=yTT+A/2-fs1t*0.55,ty2=yTT+A/2+fs2t*0.55;
+      var ty1=yTT+TA/2-fs1t*0.55,ty2=yTT+TA/2+fs2t*0.55;
       plbl(xT+L/2,ty1,ty2,'TAPA',L+' x '+A,tc.labelMain,tc.labelMain,fs1t,fs2t);
-      var by1=yPB+A/2-fs1t*0.55,by2=yPB+A/2+fs2t*0.55;
+      var by1=yPB+TA/2-fs1t*0.55,by2=yPB+TA/2+fs2t*0.55;
       plbl(xF+L/2,by1,by2,'BASE',L+' x '+A,tc.labelMain,tc.labelMain,fs1t,fs2t);
       cierreLabel(xT+L/2,yCT+CH/2,'CIERRE SUP');
       cierreLabel(xF+L/2,yBB+CH/2,'CIERRE INF');
     } else if(bt==='cierre-automatico'){
-      var ty1=yTT+A/2-fs1t*0.55,ty2=yTT+A/2+fs2t*0.55;
+      var ty1=yTT+TA/2-fs1t*0.55,ty2=yTT+TA/2+fs2t*0.55;
       plbl(xF+L/2,ty1,ty2,'TAPA',L+' x '+A,tc.labelMain,tc.labelMain,fs1t,fs2t);
       cierreLabel(xF+L/2,yCT+CH/2,'CIERRE SUP');
     } else {
-      var ty1=yTT+A/2-fs1t*0.55,ty2=yTT+A/2+fs2t*0.55;
+      var ty1=yTT+TA/2-fs1t*0.55,ty2=yTT+TA/2+fs2t*0.55;
       plbl(xF+L/2,ty1,ty2,'TAPA',L+' x '+A,tc.labelMain,tc.labelMain,fs1t,fs2t);
-      var by1=yPB+A/2-fs1t*0.55,by2=yPB+A/2+fs2t*0.55;
+      var by1=yPB+TA/2-fs1t*0.55,by2=yPB+TA/2+fs2t*0.55;
       plbl(xF+L/2,by1,by2,'BASE',L+' x '+A,tc.labelMain,tc.labelMain,fs1t,fs2t);
       cierreLabel(xF+L/2,yCT+CH/2,'CIERRE SUP');
       cierreLabel(xF+L/2,yBB+CH/2,'CIERRE INF');
@@ -2187,7 +2249,7 @@ function buildExportSVG(){
   var bt=S.boxType;
   var origBt=bt;
   if(bt==='cierre-semi-automatico') bt='cierre-automatico';
-  var L=g.L,A=g.A,H=g.H,PW=g.PW,CH=g.CH,R=g.R,TH=g.TH,TAL=g.TAL,LK=g.LK;
+  var L=g.L,A=g.A,TA=g.TA,H=g.H,PW=g.PW,CH=g.CH,R=g.R,TH=g.TH,TAL=g.TAL,LK=g.LK;
   var xT=g.xT,xI=g.xI,xF=g.xF,xD=g.xD,xDR=g.xDR,xPL=g.xPL;
   var yPT=g.yPT,yPB=g.yPB,yTT=g.yTT,yCT=g.yCT,yBB=g.yBB,yCB=g.yCB;
   var tw=g.tw,th=g.th;
@@ -2769,6 +2831,7 @@ function buildSidebar(){
   h+=gcInput('pegaW','Ancho pega',S.pegaW,5,30,'mm');
   h+=gcInput('cierreH','Alto cierre',S.cierreH,5,25,'mm');
   h+=gcInput('redondeo','Redondeo cierre',S.redondeo,0,15,'mm');
+  h+=gcInput('cierreAngle','Ángulo cierre',S.cierreAngle,0,45,'°');
   h+=gcInput('lock','Anclaje talón',S.lock,1,10,'mm');
   h+=gcInput('talon','Talón lateral',S.talon,1,20,'mm');
   h+='<div style="display:flex;flex-direction:column;gap:.25rem">';
@@ -2787,6 +2850,7 @@ function buildSidebar(){
   h+=gcInput('pegaW','Ancho pega',S.pegaW,5,30,'mm');
   h+=gcInput('cierreH','Alto cierre',S.cierreH,5,25,'mm');
   h+=gcInput('redondeo','Redondeo cierre',S.redondeo,0,15,'mm');
+  h+=gcInput('cierreAngle','Ángulo cierre',S.cierreAngle,0,45,'°');
   h+=gcInput('lock','Anclaje talón',S.lock,1,10,'mm');
   h+=gcInput('talon','Talón lateral',S.talon,1,20,'mm');
   h+='<div style="display:flex;flex-direction:column;gap:.25rem">';
@@ -2805,6 +2869,7 @@ function buildSidebar(){
   h+=gcInput('pegaW','Ancho pega',S.pegaW,5,30,'mm');
   h+=gcInput('cierreH','Alto cierre',S.cierreH,5,25,'mm');
   h+=gcInput('redondeo','Redondeo cierre',S.redondeo,0,15,'mm');
+  h+=gcInput('cierreAngle','Ángulo cierre',S.cierreAngle,0,45,'°');
   h+=gcInput('lock','Anclaje talón',S.lock,1,10,'mm');
   h+=gcInput('talon','Talón lateral',S.talon,1,20,'mm');
   h+='<div style="display:flex;flex-direction:column;gap:.25rem">';
@@ -2823,6 +2888,7 @@ function buildSidebar(){
   h+=gcInput('pegaW','Ancho pega',S.pegaW,5,30,'mm');
   h+=gcInput('cierreH','Alto cierre',S.cierreH,5,25,'mm');
   h+=gcInput('redondeo','Redondeo cierre',S.redondeo,0,15,'mm');
+  h+=gcInput('cierreAngle','Ángulo cierre',S.cierreAngle,0,45,'°');
   h+=gcInput('lock','Anclaje talón',S.lock,1,10,'mm');
   h+=gcInput('talon','Talón lateral',S.talon,1,20,'mm');
   h+='<div style="display:flex;flex-direction:column;gap:.25rem">';
